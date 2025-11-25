@@ -1,59 +1,166 @@
 """API 路由"""
+import base64
 import json
+import logging
+from typing import Any, Dict
 from flask import Blueprint, request, jsonify, Response, send_file
-from backend.services.outline import get_outline_service
-from backend.services.image import get_image_service
+from backend.services.image import get_image_service, ImageTaskStateStore
 from backend.services.history import get_history_service
+from backend.task_queue import get_outline_queue, get_image_queue
+from backend.task_queue.task_store import TaskStore, TaskType, TaskStatus
+from backend.tasks import generate_outline_task, generate_images_task
+
+logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 
+def _get_user_id() -> str:
+    """从请求头或查询参数获取用户 ID。
+
+    优先级：
+        1. X-User-Id 请求头（适用于 POST/GET 等常规请求）
+        2. user_id 查询参数（适用于 EventSource SSE 请求，因 EventSource 不支持自定义头）
+
+    Returns:
+        用户 ID 字符串，未提供则返回空字符串
+    """
+    user_id = request.headers.get('X-User-Id')
+    if not user_id:
+        user_id = request.args.get('user_id')
+    return (user_id or '').strip()
+
+
 @api_bp.route('/outline', methods=['POST'])
-def generate_outline():
-    """生成大纲（支持图片上传）"""
+def create_outline_task():
+    """创建大纲生成任务（异步）。
+
+    请求格式:
+        - multipart/form-data: topic (必需), images[] (可选)
+        - application/json: {"topic": "...", "images": ["base64..."]}
+
+    响应:
+        - 202 Accepted: {"success": true, "task_id": "...", "status": "pending"}
+        - 400 Bad Request: topic 为空
+        - 500 Internal Error: 创建任务失败
+
+    前端需轮询 GET /api/outline/<task_id> 获取结果。
+    """
     try:
-        # 检查是否是 multipart/form-data（带图片）
+        user_id = _get_user_id()
+        images_base64 = []
+
+        # 解析请求体
         if request.content_type and 'multipart/form-data' in request.content_type:
             topic = request.form.get('topic')
-            # 获取上传的图片
-            images = []
             if 'images' in request.files:
                 files = request.files.getlist('images')
                 for file in files:
                     if file and file.filename:
                         image_data = file.read()
-                        images.append(image_data)
+                        images_base64.append(base64.b64encode(image_data).decode('utf-8'))
         else:
-            # JSON 请求（无图片或 base64 图片）
-            data = request.get_json()
+            data = request.get_json() or {}
             topic = data.get('topic')
-            # 支持 base64 格式的图片
-            images_base64 = data.get('images', [])
-            images = []
-            if images_base64:
-                import base64
-                for img_b64 in images_base64:
-                    # 移除可能的 data URL 前缀
-                    if ',' in img_b64:
-                        img_b64 = img_b64.split(',')[1]
-                    images.append(base64.b64decode(img_b64))
+            images_base64 = data.get('images') or []
 
-        if not topic:
+        # 参数校验
+        if not topic or not topic.strip():
             return jsonify({
                 "success": False,
                 "error": "topic 参数不能为空"
             }), 400
 
-        # 调用大纲生成服务
-        outline_service = get_outline_service()
-        result = outline_service.generate_outline(topic, images if images else None)
+        # 创建任务
+        task_id = TaskStore.create_task(
+            task_type=TaskType.OUTLINE,
+            user_id=user_id,
+            progress_total=1,
+            extra_fields={"topic": topic.strip()},
+        )
 
-        if result["success"]:
-            return jsonify(result), 200
-        else:
-            return jsonify(result), 500
+        # 入队异步执行
+        outline_queue = get_outline_queue()
+        outline_queue.enqueue(
+            generate_outline_task,
+            task_id,
+            topic.strip(),
+            images_base64 if images_base64 else None,
+            job_id=task_id,
+        )
+
+        logger.info(f"大纲任务已创建: task_id={task_id}, user_id={user_id}")
+
+        return jsonify({
+            "success": True,
+            "task_id": task_id,
+            "status": TaskStatus.PENDING.value,
+        }), 202
 
     except Exception as e:
+        logger.exception("创建大纲任务失败")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@api_bp.route('/outline/<task_id>', methods=['GET'])
+def get_outline_task_status(task_id: str):
+    """查询大纲生成任务状态。
+
+    响应:
+        - 200 OK: {"success": true, "status": "...", ...}
+          - status=pending/running: 等待或执行中
+          - status=finished: 包含 outline, pages 字段
+          - status=failed: 包含 error 字段
+        - 404 Not Found: 任务不存在
+    """
+    try:
+        user_id = _get_user_id()
+        task = TaskStore.get_task(TaskType.OUTLINE, task_id)
+
+        if not task:
+            return jsonify({
+                "success": False,
+                "error": "任务不存在"
+            }), 404
+
+        # 可选：验证用户权限（如果有 user_id）
+        task_user_id = task.get("user_id", "")
+        if user_id and task_user_id and user_id != task_user_id:
+            return jsonify({
+                "success": False,
+                "error": "无权访问此任务"
+            }), 403
+
+        response = {
+            "success": True,
+            "task_id": task_id,
+            "status": task.get("status", "unknown"),
+            "progress_current": task.get("progress_current", 0),
+            "progress_total": task.get("progress_total", 0),
+        }
+
+        # 解析结果字段
+        result_str = task.get("result", "")
+        if result_str:
+            try:
+                result_data = json.loads(result_str)
+                if isinstance(result_data, dict):
+                    # 展开结果到响应中
+                    response.update(result_data)
+            except json.JSONDecodeError:
+                response["result"] = result_str
+
+        # 添加错误信息
+        if task.get("error"):
+            response["error"] = task.get("error")
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        logger.exception(f"查询大纲任务失败: task_id={task_id}")
         return jsonify({
             "success": False,
             "error": str(e)
@@ -61,50 +168,146 @@ def generate_outline():
 
 
 @api_bp.route('/generate', methods=['POST'])
-def generate_images():
-    """生成图片（SSE 流式返回，支持用户上传参考图片）"""
-    try:
-        # JSON 请求
-        data = request.get_json()
-        pages = data.get('pages')
-        task_id = data.get('task_id')
-        full_outline = data.get('full_outline', '')
-        user_topic = data.get('user_topic', '')  # 用户原始输入
-        # 支持 base64 格式的用户参考图片
-        user_images_base64 = data.get('user_images', [])
-        user_images = []
-        if user_images_base64:
-            import base64
-            for img_b64 in user_images_base64:
-                if ',' in img_b64:
-                    img_b64 = img_b64.split(',')[1]
-                user_images.append(base64.b64decode(img_b64))
+def create_image_task():
+    """创建图片生成任务（异步）。
 
-        if not pages:
+    请求格式（JSON）:
+        {
+            "pages": [...],
+            "task_id": "可选，前端自定义 ID",
+            "full_outline": "...",
+            "user_topic": "...",
+            "user_images": ["data:image/png;base64,...", ...]
+        }
+
+    响应:
+        - 202 Accepted: {"success": true, "task_id": "...", "status": "pending"}
+        - 400 Bad Request: 参数错误
+        - 500 Internal Error: 创建任务失败
+
+    前端通过 GET /api/generate/stream/<task_id> 订阅 SSE 事件。
+    """
+    try:
+        user_id = _get_user_id()
+        data = request.get_json() or {}
+
+        pages = data.get('pages') or []
+        client_task_id = data.get('task_id')  # 兼容前端自定义 ID
+        full_outline = (data.get('full_outline') or '').strip()
+        user_topic = (data.get('user_topic') or '').strip()
+        user_images_base64 = data.get('user_images') or []
+
+        if not isinstance(pages, list) or not pages:
             return jsonify({
                 "success": False,
                 "error": "pages 参数不能为空"
             }), 400
 
-        # 获取图片生成服务
-        image_service = get_image_service()
+        total = len(pages)
 
-        def generate():
-            """SSE 生成器"""
-            for event in image_service.generate_images(
-                pages, task_id, full_outline,
-                user_images=user_images if user_images else None,
-                user_topic=user_topic
-            ):
-                event_type = event["event"]
-                event_data = event["data"]
+        # 创建任务状态（高层任务信息）
+        task_id = TaskStore.create_task(
+            task_type=TaskType.IMAGE,
+            task_id=client_task_id,
+            user_id=user_id,
+            progress_total=total,
+        )
 
-                # 格式化为 SSE 格式
-                yield f"event: {event_type}\n"
-                yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+        # 初始化图片任务状态（详细页信息、用户参数等）
+        ImageTaskStateStore.init_task(
+            task_id=task_id,
+            pages=pages,
+            full_outline=full_outline,
+            user_topic=user_topic,
+            user_images_base64=user_images_base64,
+        )
+
+        # 将任务推入图片队列，由 RQ worker 异步执行
+        image_queue = get_image_queue()
+        image_queue.enqueue(
+            generate_images_task,
+            task_id,
+            job_id=task_id,
+        )
+
+        logger.info(
+            f"图片任务已创建: task_id={task_id}, user_id={user_id}, total_pages={total}"
+        )
+
+        return jsonify({
+            "success": True,
+            "task_id": task_id,
+            "status": TaskStatus.PENDING.value,
+        }), 202
+
+    except Exception as e:
+        logger.exception("创建图片任务失败")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@api_bp.route('/generate/stream/<task_id>', methods=['GET'])
+def stream_image_task(task_id: str):
+    """通过 SSE 订阅图片生成任务事件。
+
+    事件格式保持与原实现一致:
+        - event: progress / complete / error / finish
+        - data: {...}
+
+    前端使用 EventSource 订阅此接口。
+    """
+    try:
+        user_id = _get_user_id()
+        task = TaskStore.get_task(TaskType.IMAGE, task_id)
+
+        if not task:
+            return jsonify({
+                "success": False,
+                "error": "任务不存在"
+            }), 404
+
+        # 验证用户权限
+        task_user_id = task.get("user_id", "")
+        if user_id and task_user_id and user_id != task_user_id:
+            return jsonify({
+                "success": False,
+                "error": "无权访问此任务"
+            }), 403
+
+        # 订阅 Redis Pub/Sub 频道
+        pubsub = TaskStore.subscribe_events(TaskType.IMAGE, task_id)
+
+        def event_stream():
+            try:
+                for message in pubsub.listen():
+                    if message.get("type") != "message":
+                        continue
+
+                    data = message.get("data")
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+
+                    try:
+                        payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+
+                    event_type = payload.get("event") or "message"
+                    event_data = payload.get("data") or {}
+
+                    yield f"event: {event_type}\n"
+                    yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+                    # finish 事件后结束流
+                    if event_type == "finish":
+                        break
+            finally:
+                pubsub.close()
 
         return Response(
-            generate(),
+            event_stream(),
             mimetype='text/event-stream',
             headers={
                 'Cache-Control': 'no-cache',
@@ -113,6 +316,102 @@ def generate_images():
         )
 
     except Exception as e:
+        logger.exception(f"订阅图片任务事件失败: task_id={task_id}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@api_bp.route('/generate/<task_id>', methods=['GET'])
+def get_image_task_status(task_id: str):
+    """查询图片生成任务状态及每页生成情况。
+
+    响应:
+        {
+            "success": true,
+            "task_id": "...",
+            "status": "running",
+            "progress_current": 5,
+            "progress_total": 10,
+            "images": [
+                {"index": 0, "status": "done", "image_url": "...", "candidates": [...]},
+                {"index": 1, "status": "error", "error": "..."},
+                {"index": 2, "status": "pending"}
+            ]
+        }
+    """
+    try:
+        user_id = _get_user_id()
+        task = TaskStore.get_task(TaskType.IMAGE, task_id)
+
+        if not task:
+            return jsonify({
+                "success": False,
+                "error": "任务不存在"
+            }), 404
+
+        # 验证用户权限
+        task_user_id = task.get("user_id", "")
+        if user_id and task_user_id and user_id != task_user_id:
+            return jsonify({
+                "success": False,
+                "error": "无权访问此任务"
+            }), 403
+
+        response: Dict[str, Any] = {
+            "success": True,
+            "task_id": task_id,
+            "status": task.get("status", "unknown"),
+            "progress_current": task.get("progress_current", 0),
+            "progress_total": task.get("progress_total", 0),
+        }
+
+        # 汇总每页图片生成状态
+        state = ImageTaskStateStore.load_state(task_id)
+        if state:
+            pages = state.get("pages") or []
+            generated = state.get("generated") or {}
+            failed = state.get("failed") or {}
+            candidates_map = state.get("candidates") or {}
+
+            images_summary = []
+            for page in pages:
+                index = page.get("index")
+                if index is None:
+                    continue
+                key = str(index)
+
+                if key in generated:
+                    filename = generated[key]
+                    candidate_files = candidates_map.get(key) or [filename]
+                    images_summary.append({
+                        "index": index,
+                        "status": "done",
+                        "image_url": f"/api/images/{filename}",
+                        "candidates": [f"/api/images/{f}" for f in candidate_files],
+                    })
+                elif key in failed:
+                    images_summary.append({
+                        "index": index,
+                        "status": "error",
+                        "error": failed[key],
+                    })
+                else:
+                    images_summary.append({
+                        "index": index,
+                        "status": "pending",
+                    })
+
+            response["images"] = images_summary
+
+        if task.get("error"):
+            response["error"] = task.get("error")
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        logger.exception(f"查询图片任务失败: task_id={task_id}")
         return jsonify({
             "success": False,
             "error": str(e)

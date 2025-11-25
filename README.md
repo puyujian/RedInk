@@ -114,13 +114,47 @@ cd frontend
 pnpm install
 ```
 
-### 5. 启动服务
+### 5. 启动 Redis（必需）
+
+项目使用 Redis 作为任务队列，需要先启动 Redis 服务：
+
+**Windows:**
+```bash
+# 下载并安装 Redis for Windows
+# 或使用 Docker: docker run -d -p 6379:6379 redis
+```
+
+**Linux/macOS:**
+```bash
+# 使用包管理器安装
+sudo apt install redis-server  # Ubuntu/Debian
+brew install redis             # macOS
+
+# 启动服务
+redis-server
+```
+
+### 6. 启动服务
 
 **启动后端:**
 ```bash
 uv run python -m backend.app
 ```
 访问: http://localhost:12398
+
+**启动 Worker（必需）:**
+
+在新的终端窗口中启动任务队列 Worker：
+
+```bash
+# Windows 系统
+uv run python backend/worker.py
+
+# Linux/macOS 系统（可选标准 Worker）
+uv run python backend/worker.py
+```
+
+⚠️ **重要**: Worker 必须保持运行，否则大纲和图片生成任务无法执行
 
 **启动前端:**
 ```bash

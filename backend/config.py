@@ -14,6 +14,17 @@ class Config:
     GOOGLE_CLOUD_API_KEY = os.getenv('GOOGLE_CLOUD_API_KEY')
     OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
 
+    # Redis 连接配置
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+    # RQ 任务队列配置
+    OUTLINE_QUEUE_NAME = os.getenv('OUTLINE_QUEUE_NAME', 'outline_queue')
+    IMAGE_QUEUE_NAME = os.getenv('IMAGE_QUEUE_NAME', 'image_queue')
+
+    # 任务超时配置（秒）
+    OUTLINE_TASK_TIMEOUT = int(os.getenv('OUTLINE_TASK_TIMEOUT', 300))  # 大纲生成超时 5 分钟
+    IMAGE_TASK_TIMEOUT = int(os.getenv('IMAGE_TASK_TIMEOUT', 1800))  # 图片生成超时 30 分钟
+
     _image_providers_config = None
 
     @classmethod

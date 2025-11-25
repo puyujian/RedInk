@@ -11,6 +11,9 @@ dependencies = [
     "pyyaml>=6.0.0",
     "requests>=2.31.0",
     "pillow>=12.0.0",
+    # 异步任务队列支持
+    "redis>=5.0.0",
+    "rq>=1.16.0",
 ]
 
 [build-system]

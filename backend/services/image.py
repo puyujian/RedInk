@@ -2,12 +2,205 @@
 import os
 import uuid
 import time
+import json
+import base64
 import threading
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Generator, List, Optional, Tuple
 from backend.config import Config
 from backend.generators.factory import ImageGeneratorFactory
 from backend.utils.image_compressor import compress_image
+from backend.task_queue import get_redis_connection
+
+logger = logging.getLogger(__name__)
+
+
+class ImageTaskStateStore:
+    """图片任务状态存储（基于 Redis + JSON）。
+
+    该类专门用于存储图片生成任务的详细状态，与 TaskStore 配合使用：
+    - TaskStore: 存储通用任务元信息（status, progress, user_id 等）
+    - ImageTaskStateStore: 存储图片任务特有的状态（pages, generated, failed, cover_image 等）
+
+    Key 格式:
+        image_task_state:{task_id}
+
+    Value 结构:
+        {
+            "pages": [...],
+            "generated": {"0": "xxx.png", ...},
+            "failed": {"1": "错误信息", ...},
+            "candidates": {"0": ["a.png", "b.png"], ...},
+            "cover_image": "<base64 字符串>",
+            "full_outline": "...",
+            "user_topic": "...",
+            "user_images": ["<base64>", ...]
+        }
+    """
+
+    # 状态过期时间（秒），默认 48 小时
+    DEFAULT_TTL = 48 * 60 * 60
+
+    @staticmethod
+    def _make_key(task_id: str) -> str:
+        """构造 Redis key。"""
+        return f"image_task_state:{task_id}"
+
+    @classmethod
+    def init_task(
+        cls,
+        task_id: str,
+        pages: List[Dict[str, Any]],
+        full_outline: str = "",
+        user_topic: str = "",
+        user_images_base64: Optional[List[str]] = None,
+        ttl: Optional[int] = None,
+    ) -> None:
+        """初始化图片任务状态。
+
+        Args:
+            task_id: 任务 ID
+            pages: 页面列表
+            full_outline: 完整大纲文本
+            user_topic: 用户原始输入
+            user_images_base64: 用户参考图片（base64 编码）
+            ttl: 过期时间（秒）
+        """
+        state: Dict[str, Any] = {
+            "pages": pages,
+            "generated": {},
+            "failed": {},
+            "candidates": {},
+            "cover_image": "",
+            "full_outline": full_outline or "",
+            "user_topic": user_topic or "",
+            "user_images": user_images_base64 or [],
+        }
+        redis_conn = get_redis_connection()
+        key = cls._make_key(task_id)
+        redis_conn.set(key, json.dumps(state, ensure_ascii=False))
+
+        effective_ttl = ttl if ttl is not None else cls.DEFAULT_TTL
+        if effective_ttl > 0:
+            redis_conn.expire(key, effective_ttl)
+
+        logger.info(f"图片任务状态已初始化: task_id={task_id}, pages={len(pages)}")
+
+    @classmethod
+    def load_state(cls, task_id: str) -> Optional[Dict[str, Any]]:
+        """加载任务状态。
+
+        Returns:
+            任务状态字典，不存在则返回 None
+        """
+        redis_conn = get_redis_connection()
+        raw = redis_conn.get(cls._make_key(task_id))
+        if not raw:
+            return None
+
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+
+        try:
+            state = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(f"图片任务状态解析失败: task_id={task_id}")
+            return None
+
+        # 补全默认字段，避免 KeyError
+        state.setdefault("pages", [])
+        state.setdefault("generated", {})
+        state.setdefault("failed", {})
+        state.setdefault("candidates", {})
+        state.setdefault("cover_image", "")
+        state.setdefault("full_outline", "")
+        state.setdefault("user_topic", "")
+        state.setdefault("user_images", [])
+        return state
+
+    @classmethod
+    def save_state(cls, task_id: str, state: Dict[str, Any]) -> None:
+        """保存任务状态（覆盖写入）。"""
+        redis_conn = get_redis_connection()
+        redis_conn.set(cls._make_key(task_id), json.dumps(state, ensure_ascii=False))
+
+    @classmethod
+    def add_generated(
+        cls,
+        task_id: str,
+        index: int,
+        filename: str,
+        candidates: Optional[List[str]] = None,
+    ) -> None:
+        """记录单页生成成功结果。
+
+        Args:
+            task_id: 任务 ID
+            index: 页面索引
+            filename: 生成的主图片文件名
+            candidates: 候选图片文件名列表
+        """
+        state = cls.load_state(task_id)
+        if not state:
+            logger.warning(f"无法记录生成结果，任务状态不存在: task_id={task_id}")
+            return
+
+        key = str(index)
+        state["generated"][key] = filename
+        if candidates:
+            state["candidates"][key] = candidates
+        # 如果之前失败过，移除失败记录
+        state["failed"].pop(key, None)
+
+        cls.save_state(task_id, state)
+
+    @classmethod
+    def add_failed(cls, task_id: str, index: int, error: str) -> None:
+        """记录单页生成失败信息。"""
+        state = cls.load_state(task_id)
+        if not state:
+            logger.warning(f"无法记录失败信息，任务状态不存在: task_id={task_id}")
+            return
+
+        state["failed"][str(index)] = error
+        cls.save_state(task_id, state)
+
+    @classmethod
+    def set_cover_image(cls, task_id: str, image_bytes: bytes) -> None:
+        """保存压缩后的封面图（base64 编码）。"""
+        if not image_bytes:
+            return
+
+        state = cls.load_state(task_id)
+        if not state:
+            return
+
+        state["cover_image"] = base64.b64encode(image_bytes).decode("utf-8")
+        cls.save_state(task_id, state)
+
+    @classmethod
+    def get_cover_image(cls, task_id: str) -> Optional[bytes]:
+        """获取封面图二进制数据。"""
+        state = cls.load_state(task_id)
+        if not state:
+            return None
+
+        b64 = state.get("cover_image") or ""
+        if not b64:
+            return None
+
+        try:
+            return base64.b64decode(b64)
+        except Exception:
+            return None
+
+    @classmethod
+    def clear(cls, task_id: str) -> None:
+        """删除任务状态。"""
+        redis_conn = get_redis_connection()
+        redis_conn.delete(cls._make_key(task_id))
+        logger.info(f"图片任务状态已清理: task_id={task_id}")
 
 
 class ImageService:

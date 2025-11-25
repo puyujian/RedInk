@@ -228,77 +228,82 @@ onMounted(async () => {
 
   store.startGeneration()
 
-  generateImagesPost(
-    store.outline.pages,
-    null,
-    store.outline.raw,  // 传入完整大纲文本
-    // onProgress
-    (event) => {
-      console.log('Progress:', event)
-    },
-    // onComplete
-    (event) => {
-      console.log('Complete:', event)
-      if (event.image_url) {
-        store.updateProgress(event.index, 'done', event.image_url, undefined, event.candidates)
-      }
-    },
-    // onError
-    (event) => {
-      console.error('Error:', event)
-      store.updateProgress(event.index, 'error', undefined, event.message)
-    },
-    // onFinish
-    async (event) => {
-      console.log('Finish:', event)
-      store.finishGeneration(event.task_id)
-
-      // 更新历史记录
-      if (store.recordId) {
-        try {
-          // 收集所有生成的图片文件名
-          const generatedImages = event.images.filter(img => img !== null)
-
-          // 确定状态
-          let status = 'completed'
-          if (hasFailedImages.value) {
-            status = generatedImages.length > 0 ? 'partial' : 'draft'
-          }
-
-          // 获取封面图作为缩略图
-          const coverImage = generatedImages.length > 0 ? getImageUrl(generatedImages[0]) : null
-
-          await updateHistory(store.recordId, {
-            images: {
-              task_id: event.task_id,
-              generated: generatedImages
-            },
-            status: status,
-            thumbnail: coverImage
-          })
-          console.log('历史记录已更新')
-        } catch (e) {
-          console.error('更新历史记录失败:', e)
+  try {
+    await generateImagesPost(
+      store.outline.pages,
+      null,
+      store.outline.raw,  // 传入完整大纲文本
+      // onProgress
+      (event) => {
+        console.log('Progress:', event)
+      },
+      // onComplete
+      (event) => {
+        console.log('Complete:', event)
+        if (event.image_url) {
+          store.updateProgress(event.index, 'done', event.image_url, undefined, event.candidates)
         }
-      }
+      },
+      // onError
+      (event) => {
+        console.error('Error:', event)
+        store.updateProgress(event.index, 'error', undefined, event.message)
+      },
+      // onFinish
+      async (event) => {
+        console.log('Finish:', event)
+        store.finishGeneration(event.task_id)
 
-      // 如果没有失败的，跳转到结果页
-      if (!hasFailedImages.value) {
-        setTimeout(() => {
-          router.push('/result')
-        }, 1000)
-      }
-    },
-    // onStreamError
-    (err) => {
-      console.error('Stream Error:', err)
-      error.value = '生成失败: ' + err.message
-    },
-    // userImages - 用户上传的参考图片
-    store.userImages.length > 0 ? store.userImages : undefined,
-    // userTopic - 用户原始输入
-    store.topic
-  )
+        // 更新历史记录
+        if (store.recordId) {
+          try {
+            // 收集所有生成的图片文件名
+            const generatedImages = event.images.filter(img => img !== null)
+
+            // 确定状态
+            let status = 'completed'
+            if (hasFailedImages.value) {
+              status = generatedImages.length > 0 ? 'partial' : 'draft'
+            }
+
+            // 获取封面图作为缩略图
+            const coverImage = generatedImages.length > 0 ? getImageUrl(generatedImages[0]) : null
+
+            await updateHistory(store.recordId, {
+              images: {
+                task_id: event.task_id,
+                generated: generatedImages
+              },
+              status: status,
+              thumbnail: coverImage
+            })
+            console.log('历史记录已更新')
+          } catch (e) {
+            console.error('更新历史记录失败:', e)
+          }
+        }
+
+        // 如果没有失败的，跳转到结果页
+        if (!hasFailedImages.value) {
+          setTimeout(() => {
+            router.push('/result')
+          }, 1000)
+        }
+      },
+      // onStreamError
+      (err) => {
+        console.error('Stream Error:', err)
+        error.value = '生成失败: ' + err.message
+      },
+      // userImages - 用户上传的参考图片
+      store.userImages.length > 0 ? store.userImages : undefined,
+      // userTopic - 用户原始输入
+      store.topic
+    )
+  } catch (err: any) {
+    console.error('创建图片任务失败:', err)
+    error.value = '创建图片任务失败: ' + (err.message || '未知错误')
+  }
 })
 </script>
 
