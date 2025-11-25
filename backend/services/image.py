@@ -77,6 +77,34 @@ class ImageService:
             f.write(image_data)
         return filepath
 
+    def _save_candidate_images(
+        self,
+        candidates: List[bytes],
+        task_id: str,
+        index: int
+    ) -> List[str]:
+        """
+        保存所有候选图片到本地
+
+        Args:
+            candidates: 候选图片数据列表
+            task_id: 任务ID
+            index: 页面索引
+
+        Returns:
+            候选图片文件名列表
+        """
+        filenames = []
+        for i, image_data in enumerate(candidates):
+            # 主图片: task_id_index.png, 候选图片: task_id_index_c1.png, task_id_index_c2.png, ...
+            if i == 0:
+                filename = f"{task_id}_{index}.png"
+            else:
+                filename = f"{task_id}_{index}_c{i}.png"
+            self._save_image(image_data, filename)
+            filenames.append(filename)
+        return filenames
+
     def _generate_single_image(
         self,
         page: Dict,
@@ -86,9 +114,9 @@ class ImageService:
         full_outline: str = "",
         user_images: Optional[List[bytes]] = None,
         user_topic: str = ""
-    ) -> Tuple[int, bool, Optional[str], Optional[str]]:
+    ) -> Tuple[int, bool, Optional[str], Optional[str], Optional[List[str]]]:
         """
-        生成单张图片（带自动重试）
+        生成单张图片（带自动重试），支持多图候选
 
         Args:
             page: 页面数据
@@ -100,7 +128,8 @@ class ImageService:
             user_topic: 用户原始输入
 
         Returns:
-            (index, success, filename, error_message)
+            (index, success, filename, error_message, candidate_filenames)
+            - candidate_filenames: 所有候选图片的文件名列表（包含主图片）
         """
         index = page["index"]
         page_type = page["type"]
@@ -127,9 +156,13 @@ class ImageService:
                         model=self.provider_config.get('model', 'gemini-3-pro-image-preview'),
                         reference_image=reference_image,
                     )
+                    # 保存单张图片
+                    filename = f"{task_id}_{index}.png"
+                    self._save_image(image_data, filename)
+                    return (index, True, filename, None, [filename])
+
                 elif self.provider_config.get('type') == 'image_api':
                     # Image API 支持多张参考图片
-                    # 组合参考图片：用户上传的图片 + 封面图
                     reference_images = []
                     if user_images:
                         reference_images.extend(user_images)
@@ -143,19 +176,36 @@ class ImageService:
                         model=self.provider_config.get('model', 'nano-banana-2'),
                         reference_images=reference_images if reference_images else None,
                     )
+                    # 保存单张图片
+                    filename = f"{task_id}_{index}.png"
+                    self._save_image(image_data, filename)
+                    return (index, True, filename, None, [filename])
+
                 else:
-                    image_data = self.generator.generate_image(
-                        prompt=prompt,
-                        size=self.provider_config.get('default_size', '1024x1024'),
-                        model=self.provider_config.get('model'),
-                        quality=self.provider_config.get('quality', 'standard'),
-                    )
-
-                # 保存图片
-                filename = f"{task_id}_{index}.png"
-                self._save_image(image_data, filename)
-
-                return (index, True, filename, None)
+                    # OpenAI 兼容接口 - 尝试使用多图候选方法
+                    if hasattr(self.generator, 'generate_image_with_candidates'):
+                        result = self.generator.generate_image_with_candidates(
+                            prompt=prompt,
+                            size=self.provider_config.get('default_size', '1024x1024'),
+                            model=self.provider_config.get('model'),
+                            quality=self.provider_config.get('quality', 'standard'),
+                        )
+                        # 保存所有候选图片
+                        candidate_filenames = self._save_candidate_images(
+                            result["candidates"], task_id, index
+                        )
+                        return (index, True, candidate_filenames[0], None, candidate_filenames)
+                    else:
+                        # 回退到单图方法
+                        image_data = self.generator.generate_image(
+                            prompt=prompt,
+                            size=self.provider_config.get('default_size', '1024x1024'),
+                            model=self.provider_config.get('model'),
+                            quality=self.provider_config.get('quality', 'standard'),
+                        )
+                        filename = f"{task_id}_{index}.png"
+                        self._save_image(image_data, filename)
+                        return (index, True, filename, None, [filename])
 
             except Exception as e:
                 error_msg = str(e)
@@ -166,9 +216,9 @@ class ImageService:
                     time.sleep(2 ** attempt)
                     continue
 
-                return (index, False, None, error_msg)
+                return (index, False, None, error_msg, None)
 
-        return (index, False, None, "超过最大重试次数")
+        return (index, False, None, "超过最大重试次数", None)
 
     def generate_images(
         self,
@@ -245,7 +295,7 @@ class ImageService:
             }
 
             # 生成封面（使用用户上传的图片作为参考）
-            index, success, filename, error = self._generate_single_image(
+            index, success, filename, error, candidates = self._generate_single_image(
                 cover_page, task_id, reference_image=None, full_outline=full_outline,
                 user_images=compressed_user_images, user_topic=user_topic
             )
@@ -253,6 +303,9 @@ class ImageService:
             if success:
                 generated_images.append(filename)
                 self._task_states[task_id]["generated"][index] = filename
+                # 保存候选图片信息
+                if candidates and len(candidates) > 1:
+                    self._task_states[task_id].setdefault("candidates", {})[index] = candidates
 
                 # 读取封面图片作为参考，并立即压缩到200KB以内
                 cover_path = os.path.join(self.output_dir, filename)
@@ -263,12 +316,16 @@ class ImageService:
                 cover_image_data = compress_image(cover_image_data, max_size_kb=200)
                 self._task_states[task_id]["cover_image"] = cover_image_data
 
+                # 构建候选图片URL列表
+                candidate_urls = [f"/api/images/{f}" for f in (candidates or [filename])]
+
                 yield {
                     "event": "complete",
                     "data": {
                         "index": index,
                         "status": "done",
                         "image_url": f"/api/images/{filename}",
+                        "candidates": candidate_urls,
                         "phase": "cover"
                     }
                 }
@@ -334,11 +391,17 @@ class ImageService:
                 for future in as_completed(future_to_page):
                     page = future_to_page[future]
                     try:
-                        index, success, filename, error = future.result()
+                        index, success, filename, error, candidates = future.result()
 
                         if success:
                             generated_images.append(filename)
                             self._task_states[task_id]["generated"][index] = filename
+                            # 保存候选图片信息
+                            if candidates and len(candidates) > 1:
+                                self._task_states[task_id].setdefault("candidates", {})[index] = candidates
+
+                            # 构建候选图片URL列表
+                            candidate_urls = [f"/api/images/{f}" for f in (candidates or [filename])]
 
                             yield {
                                 "event": "complete",
@@ -346,6 +409,7 @@ class ImageService:
                                     "index": index,
                                     "status": "done",
                                     "image_url": f"/api/images/{filename}",
+                                    "candidates": candidate_urls,
                                     "phase": "content"
                                 }
                             }

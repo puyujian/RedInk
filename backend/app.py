@@ -21,7 +21,7 @@ def create_app():
     @app.route('/')
     def index():
         return {
-            "message": "红墨 AI图文生成器 API",
+            "message": "迪迦 AI图文生成器 API",
             "version": "0.1.0",
             "endpoints": {
                 "health": "/api/health",

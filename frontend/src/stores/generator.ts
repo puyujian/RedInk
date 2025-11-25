@@ -7,6 +7,8 @@ export interface GeneratedImage {
   status: 'generating' | 'done' | 'error' | 'retrying'
   error?: string
   retryable?: boolean
+  candidates?: string[]  // 候选图片URL列表
+  selectedIndex?: number // 当前选中的候选图片索引（默认0）
 }
 
 export interface GeneratorState {
@@ -160,15 +162,46 @@ export const useGeneratorStore = defineStore('generator', {
     },
 
     // 更新进度
-    updateProgress(index: number, status: 'generating' | 'done' | 'error', url?: string, error?: string) {
+    updateProgress(
+      index: number,
+      status: 'generating' | 'done' | 'error',
+      url?: string,
+      error?: string,
+      candidates?: string[]
+    ) {
       const image = this.images.find(img => img.index === index)
       if (image) {
         image.status = status
         if (url) image.url = url
         if (error) image.error = error
+        if (candidates && candidates.length > 0) {
+          image.candidates = candidates
+          image.selectedIndex = 0
+        }
       }
       if (status === 'done') {
         this.progress.current++
+      }
+    },
+
+    // 更新单个图片URL（用于重绘后更新）
+    updateImage(index: number, newUrl: string, candidates?: string[]) {
+      const image = this.images.find(img => img.index === index)
+      if (image) {
+        image.url = newUrl
+        if (candidates && candidates.length > 0) {
+          image.candidates = candidates
+          image.selectedIndex = 0
+        }
+      }
+    },
+
+    // 选择候选图片
+    selectCandidate(index: number, candidateIndex: number) {
+      const image = this.images.find(img => img.index === index)
+      if (image && image.candidates && candidateIndex < image.candidates.length) {
+        image.selectedIndex = candidateIndex
+        image.url = image.candidates[candidateIndex]
       }
     },
 

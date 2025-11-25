@@ -15,7 +15,7 @@
       <div class="hero-content">
         <div class="brand-pill">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-          AI 驱动的红墨创作助手
+          AI 驱动的迪迦创作助手
         </div>
         <div class="platform-slogan">
           让传播不再需要门槛，让创作从未如此简单

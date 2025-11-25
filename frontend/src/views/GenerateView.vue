@@ -240,7 +240,7 @@ onMounted(async () => {
     (event) => {
       console.log('Complete:', event)
       if (event.image_url) {
-        store.updateProgress(event.index, 'done', event.image_url)
+        store.updateProgress(event.index, 'done', event.image_url, undefined, event.candidates)
       }
     },
     // onError
