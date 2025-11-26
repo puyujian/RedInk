@@ -1,13 +1,10 @@
-version: '3.8'
-
 services:
   # Redis 服务 - 用于任务队列和缓存（必需）
   redis:
     image: redis:7-alpine
     container_name: redink-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # 仅内部网络访问，不对外暴露端口
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
@@ -31,8 +28,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-redink}
       MYSQL_USER: ${MYSQL_USER:-redink}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-redink_pass}
-    ports:
-      - "3306:3306"
+    # 仅内部网络访问，不对外暴露端口
     volumes:
       - mysql-data:/var/lib/mysql
       - ./init-scripts:/docker-entrypoint-initdb.d
@@ -83,8 +79,7 @@ services:
       
       # 文件存储
       OUTPUT_DIR: /app/output
-    ports:
-      - "12398:12398"
+    # 仅内部网络访问，通过 nginx 反向代理对外服务
     volumes:
       - ./output:/app/output
       - ./history:/app/history
@@ -154,7 +149,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "6257:80"
     networks:
       - redink-network
 
