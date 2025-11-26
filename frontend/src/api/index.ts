@@ -1,17 +1,121 @@
-import axios from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { getUserId } from '../utils/userId'
+import { getStoredAccessToken, saveAccessToken } from './auth'
 
-const API_BASE_URL = '/api'
+export const API_BASE_URL = '/api'
 
-// 配置 axios 实例，自动添加 X-User-Id 请求头
+// ============================================================================
+// axios 实例配置
+// ============================================================================
+
+/**
+ * 配置 axios 实例
+ *
+ * 功能：
+ * - 自动添加 X-User-Id 请求头（匿名用户兼容）
+ * - 自动添加 Authorization: Bearer token 头（已登录用户）
+ * - 401 响应时自动刷新 token 并重试
+ */
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
 })
 
+// ============================================================================
+// 请求拦截器
+// ============================================================================
+
 apiClient.interceptors.request.use((config) => {
+  // 确保 headers 对象存在
+  config.headers = config.headers || {}
+
+  // 始终添加匿名用户 ID（向后兼容）
   config.headers['X-User-Id'] = getUserId()
+
+  // 如果有 access_token 且未手动设置 Authorization，则自动添加
+  const token = getStoredAccessToken()
+  if (token && !config.headers['Authorization']) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
+
   return config
 })
+
+// ============================================================================
+// 响应拦截器 - 自动刷新 token
+// ============================================================================
+
+/** 扩展请求配置类型，添加重试标记 */
+interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean
+}
+
+/** 刷新 token 的并发控制：同一时间只发起一个刷新请求 */
+let refreshPromise: Promise<string | null> | null = null
+
+apiClient.interceptors.response.use(
+  // 成功响应直接返回
+  (response) => response,
+  // 处理错误响应
+  async (error: AxiosError) => {
+    const { response, config } = error
+    const originalRequest = config as ExtendedAxiosRequestConfig
+
+    // 非 401 错误或无原始请求配置，直接抛出
+    if (!response || response.status !== 401 || !originalRequest) {
+      return Promise.reject(error)
+    }
+
+    // 已经重试过，不再重试
+    if (originalRequest._retry) {
+      return Promise.reject(error)
+    }
+
+    // 检查是否为认证相关接口，避免循环刷新
+    const url = originalRequest.url || ''
+    const isAuthEndpoint =
+      url.includes('/auth/login') ||
+      url.includes('/auth/register') ||
+      url.includes('/auth/refresh') ||
+      url.includes('/auth/logout')
+
+    if (isAuthEndpoint) {
+      return Promise.reject(error)
+    }
+
+    // 尝试刷新 token（通过 store 以保持状态同步）
+    if (!refreshPromise) {
+      // 延迟导入 store 以避免循环依赖和 Pinia 初始化问题
+      refreshPromise = import('../stores/auth')
+        .then(({ useAuthStore }) => {
+          const authStore = useAuthStore()
+          return authStore.refreshToken()
+        })
+        .catch((refreshError) => {
+          console.warn('刷新 token 失败:', refreshError)
+          // 确保清理本地存储
+          saveAccessToken(null)
+          return null
+        })
+        .finally(() => {
+          refreshPromise = null
+        })
+    }
+
+    // 等待刷新结果
+    const newToken = await refreshPromise
+
+    if (!newToken) {
+      // 刷新失败，返回原始错误
+      return Promise.reject(error)
+    }
+
+    // 刷新成功，重试原始请求
+    originalRequest._retry = true
+    originalRequest.headers['Authorization'] = `Bearer ${newToken}`
+
+    return apiClient(originalRequest)
+  }
+)
 
 export interface Page {
   index: number

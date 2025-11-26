@@ -1,13 +1,35 @@
 <template>
   <div id="app">
+    <!-- 移动端汉堡菜单按钮 -->
+    <button
+      type="button"
+      class="sidebar-toggle"
+      :class="{ 'is-active': isSidebarOpen }"
+      @click="toggleSidebar"
+      aria-label="切换侧边栏"
+    >
+      <span class="sidebar-toggle__icon">
+        <span class="sidebar-toggle__line"></span>
+        <span class="sidebar-toggle__line"></span>
+        <span class="sidebar-toggle__line"></span>
+      </span>
+    </button>
+
+    <!-- 侧边栏遮罩层（移动端） -->
+    <div
+      class="sidebar-backdrop"
+      :class="{ 'is-visible': isSidebarOpen }"
+      @click="closeSidebar"
+    ></div>
+
     <!-- 侧边栏 Sidebar -->
-    <aside class="layout-sidebar">
+    <aside class="layout-sidebar" :class="{ 'is-open': isSidebarOpen }">
       <div class="logo-area">
         <img src="/logo.png" alt="迪迦" class="logo-icon" />
         <span class="logo-text">迪迦</span>
       </div>
-      
-      <nav class="nav-menu">
+
+      <nav class="nav-menu" @click="handleNavClick">
         <RouterLink to="/" class="nav-item" active-class="active">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
           创作中心
@@ -17,15 +39,10 @@
           历史记录
         </RouterLink>
       </nav>
-      
-      <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border-color);">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <img src="/logo.png" alt="默子" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;" />
-          <div>
-            <div style="font-size: 14px; font-weight: 600;">默子</div>
-            <div style="font-size: 12px; color: var(--text-sub);">mozi</div>
-          </div>
-        </div>
+
+      <!-- 用户信息区域 -->
+      <div class="user-section">
+        <UserMenu @open-auth="showAuthModal = true" />
       </div>
     </aside>
 
@@ -33,9 +50,103 @@
     <main class="layout-main">
       <RouterView />
     </main>
+
+    <!-- 登录/注册模态框 -->
+    <AuthModal v-model:visible="showAuthModal" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { RouterView, RouterLink } from 'vue-router'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { RouterView, RouterLink, useRoute } from 'vue-router'
+import AuthModal from './components/AuthModal.vue'
+import UserMenu from './components/UserMenu.vue'
+import { useAuthStore } from './stores/auth'
+
+// ============================================================================
+// State
+// ============================================================================
+
+const showAuthModal = ref(false)
+const isSidebarOpen = ref(false)
+const authStore = useAuthStore()
+const route = useRoute()
+
+// ============================================================================
+// Sidebar Control
+// ============================================================================
+
+/** 切换侧边栏显示状态 */
+function toggleSidebar() {
+  isSidebarOpen.value = !isSidebarOpen.value
+}
+
+/** 关闭侧边栏 */
+function closeSidebar() {
+  isSidebarOpen.value = false
+}
+
+/** 处理导航点击，移动端自动关闭侧边栏 */
+function handleNavClick() {
+  // 仅在移动端时关闭侧边栏
+  if (window.innerWidth < 768) {
+    closeSidebar()
+  }
+}
+
+/** ESC 键关闭侧边栏 */
+function handleEscKey(event: KeyboardEvent) {
+  if (event.key === 'Escape' && isSidebarOpen.value) {
+    closeSidebar()
+  }
+}
+
+// ============================================================================
+// Lifecycle & Watchers
+// ============================================================================
+
+// 路由变化时关闭侧边栏（移动端）
+watch(
+  () => route.path,
+  () => {
+    if (window.innerWidth < 768) {
+      closeSidebar()
+    }
+  }
+)
+
+// 侧边栏打开时禁止 body 滚动（使用 CSS class）
+watch(isSidebarOpen, (isOpen) => {
+  if (typeof document !== 'undefined') {
+    if (isOpen) {
+      document.body.classList.add('sidebar-open')
+    } else {
+      document.body.classList.remove('sidebar-open')
+    }
+  }
+})
+
+onMounted(() => {
+  // 应用启动时初始化认证状态
+  authStore.initAuth()
+  // 监听 ESC 键
+  window.addEventListener('keydown', handleEscKey)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscKey)
+  // 确保清理滚动锁定
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('sidebar-open')
+  }
+})
 </script>
+
+<style scoped>
+/* 用户信息区域 */
+.user-section {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+}
+</style>

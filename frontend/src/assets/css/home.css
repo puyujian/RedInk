@@ -456,9 +456,128 @@
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .scenarios-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 767px) {
+  .hero-section {
+    margin-bottom: 32px;
+    padding: 16px 0;
+  }
+
+  .page-title {
+    font-size: 26px;
+  }
+
+  .page-subtitle {
+    font-size: 15px;
+  }
+
+  .composer-container {
+    padding: 16px;
+    border-radius: 14px;
+    margin-bottom: 28px;
+  }
+
+  .composer-textarea {
+    font-size: 15px;
+    min-height: 48px;
+  }
+
+  .composer-toolbar {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-top: 12px;
+  }
+
+  .toolbar-left {
+    gap: 12px;
+  }
+
+  .tool-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .generate-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 24px;
+    order: 1;
+  }
+
+  .scenarios-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .scenario-card {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .scenario-icon-box {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    margin-bottom: 12px;
+  }
+
+  .scenario-icon-box svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .scenario-title {
+    font-size: 14px;
+  }
+
+  .scenario-desc {
+    font-size: 11px;
+  }
+
+  .feature-card {
+    min-height: auto;
+    padding: 20px;
+  }
+
+  .recent-item {
+    padding: 12px 14px;
+    gap: 12px;
+  }
+
+  .recent-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .recent-title {
+    font-size: 14px;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .scenarios-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .scenario-card {
+    padding: 14px 12px;
+  }
+
+  .composer-container {
+    padding: 14px;
+  }
+
+  .tool-btn {
+    width: 34px;
+    height: 34px;
   }
 }
 

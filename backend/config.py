@@ -14,6 +14,9 @@ class Config:
     GOOGLE_CLOUD_API_KEY = os.getenv('GOOGLE_CLOUD_API_KEY')
     OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
 
+    # 数据库配置（默认使用 SQLite，支持 MySQL）
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///redink.db')
+
     # Redis 连接配置
     REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
@@ -24,6 +27,17 @@ class Config:
     # 任务超时配置（秒）
     OUTLINE_TASK_TIMEOUT = int(os.getenv('OUTLINE_TASK_TIMEOUT', 300))  # 大纲生成超时 5 分钟
     IMAGE_TASK_TIMEOUT = int(os.getenv('IMAGE_TASK_TIMEOUT', 1800))  # 图片生成超时 30 分钟
+
+    # JWT 认证配置
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'CHANGE_ME_IN_PRODUCTION_PLEASE')
+    JWT_ACCESS_EXPIRES = int(os.getenv('JWT_ACCESS_EXPIRES', 900))  # access token 有效期 15 分钟
+    JWT_REFRESH_EXPIRES = int(os.getenv('JWT_REFRESH_EXPIRES', 604800))  # refresh token 有效期 7 天
+
+    # CORS 允许的请求头
+    CORS_ALLOW_HEADERS = os.getenv(
+        'CORS_ALLOW_HEADERS',
+        'Content-Type,Authorization,X-User-Id'
+    ).split(',')
 
     _image_providers_config = None
 
