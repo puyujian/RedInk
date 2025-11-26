@@ -3,9 +3,10 @@ import time
 import random
 import base64
 import re
+import json
 import logging
 from functools import wraps
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import requests
 from .base import ImageGeneratorBase
 
@@ -18,6 +19,7 @@ DEFAULT_IMAGE_INDEX = 0
 DEFAULT_REQUEST_TIMEOUT = 180
 DEFAULT_DOWNLOAD_TIMEOUT = 60
 MARKDOWN_IMAGE_PATTERN = r'!\[[^\]]*\]\(([^)\s]+)[^)]*\)'
+DATA_URL_PATTERN = r'(data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=_-]+)'
 
 
 def retry_on_error(max_retries=5, base_delay=3):
@@ -99,6 +101,13 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         self.image_index = self._parse_image_index(
             config.get('image_index', DEFAULT_IMAGE_INDEX)
         )
+
+        # 是否启用流式请求（默认启用以避免超时）
+        self.enable_streaming = config.get('enable_streaming', True)
+        if isinstance(self.enable_streaming, str):
+            self.enable_streaming = self.enable_streaming.lower() in {
+                'true', '1', 'yes', 'on'
+            }
 
     def validate_config(self) -> bool:
         """验证配置"""
@@ -295,46 +304,9 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         # 在发送请求前对提示词进行长度检查和预处理
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
-            "temperature": 1.0,
-            "size": size
-        }
-
-        logger.info(f"Chat API 请求 payload: model={model}, size={size}")
-
-        response = requests.post(
-            url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
-        )
-
-        if response.status_code != 200:
-            raise Exception(f"API请求失败: {response.status_code} - {response.text}")
-
-        result = response.json()
-
-        # 验证响应结构
-        if "choices" not in result or len(result["choices"]) == 0:
-            raise ValueError("chat API 响应缺少 choices 字段或为空")
-
-        choice = result["choices"][0]
-        if "message" not in choice:
-            raise ValueError("chat API 响应缺少 message 字段")
-
-        message = choice["message"]
-        content = self._extract_content_from_message(message)
+        # 构造 payload 并发送请求（优先使用流式模式）
+        payload = self._build_chat_payload(safe_prompt, size, model)
+        content = (self._send_chat_completion_request(payload) or "").strip()
 
         # 优先检查是否为明显的错误提示（如长度限制错误）
         self._raise_if_chat_content_is_error(content, prompt)
@@ -345,8 +317,9 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             raise ValueError(f"图片生成API返回错误: {error_message}")
 
         # 情况一：base64 data URL（向后兼容）
-        if content.startswith("data:image"):
-            return self._decode_base64_image(content)
+        data_url = self._find_data_url_in_content(content)
+        if data_url:
+            return self._decode_base64_image(data_url)
 
         # 情况二：Markdown图片链接（支持多图）
         image_urls = self._extract_image_urls_from_markdown(content)
@@ -383,46 +356,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         # 在发送请求前对提示词进行长度检查和预处理
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
-            "temperature": 1.0,
-            "size": size
-        }
-
-        logger.info(f"Chat API 请求 payload: model={model}, size={size}")
-
-        response = requests.post(
-            url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
-        )
-
-        if response.status_code != 200:
-            raise Exception(f"API请求失败: {response.status_code} - {response.text}")
-
-        result = response.json()
-
-        # 验证响应结构
-        if "choices" not in result or len(result["choices"]) == 0:
-            raise ValueError("chat API 响应缺少 choices 字段或为空")
-
-        choice = result["choices"][0]
-        if "message" not in choice:
-            raise ValueError("chat API 响应缺少 message 字段")
-
-        message = choice["message"]
-        content = self._extract_content_from_message(message)
+        payload = self._build_chat_payload(safe_prompt, size, model)
+        content = (self._send_chat_completion_request(payload) or "").strip()
 
         # 优先检查是否为明显的错误提示
         self._raise_if_chat_content_is_error(content, prompt)
@@ -433,8 +368,9 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             raise ValueError(f"图片生成API返回错误: {error_message}")
 
         # 情况一：base64 data URL
-        if content.startswith("data:image"):
-            image_data = self._decode_base64_image(content)
+        data_url = self._find_data_url_in_content(content)
+        if data_url:
+            image_data = self._decode_base64_image(data_url)
             return {
                 "primary": image_data,
                 "candidates": [image_data],
@@ -872,6 +808,197 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             return 0
 
         return index
+
+    def _build_chat_payload(self, prompt: str, size: str, model: str) -> Dict[str, Any]:
+        """构造 chat API 请求 payload"""
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 1.0,
+            "size": size
+        }
+        logger.info(
+            "Chat API 请求 payload: model=%s, size=%s, streaming=%s",
+            model,
+            size,
+            self.enable_streaming
+        )
+        return payload
+
+    def _get_chat_api_request_params(self) -> Tuple[str, Dict[str, str]]:
+        """获取 chat API 请求的 URL 和 headers"""
+        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        return url, headers
+
+    def _send_chat_completion_request(self, payload: Dict[str, Any]) -> str:
+        """发送 chat API 请求，优先使用流式模式"""
+        if self.enable_streaming:
+            try:
+                return self._chat_completion_stream(payload)
+            except Exception as err:
+                logger.warning(
+                    "流式 chat API 请求失败，将回退到非流式模式: %s",
+                    err
+                )
+        return self._chat_completion_non_stream(payload)
+
+    def _chat_completion_stream(self, payload: Dict[str, Any]) -> str:
+        """以流式方式调用 chat API 并解析响应"""
+        url, headers = self._get_chat_api_request_params()
+        stream_payload = dict(payload)
+        stream_payload["stream"] = True
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=stream_payload,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+            stream=True
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"流式API请求失败: {response.status_code} - {response.text}")
+
+        try:
+            return self._consume_chat_stream(response)
+        finally:
+            response.close()
+
+    def _consume_chat_stream(self, response: requests.Response) -> str:
+        """消费 SSE 流，拼接所有内容"""
+        content_parts: List[str] = []
+        final_message: Optional[Dict[str, Any]] = None
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+
+            stripped = line.strip()
+            if not stripped or stripped.startswith(':'):
+                continue
+
+            if not stripped.startswith('data:'):
+                continue
+
+            data = stripped[5:].strip()
+            if not data:
+                continue
+
+            if data == '[DONE]':
+                break
+
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                logger.warning("解析流式 JSON 失败: %s", data[:100])
+                continue
+
+            choices = chunk.get("choices") or []
+            for choice in choices:
+                if "message" in choice and choice["message"]:
+                    final_message = choice["message"]
+
+                delta = choice.get("delta") or {}
+                delta_text = self._extract_text_from_delta(delta)
+                if delta_text:
+                    content_parts.append(delta_text)
+
+        if final_message:
+            content = self._extract_content_from_message(final_message)
+            if content:
+                return content.strip()
+
+        aggregated = "".join(content_parts).strip()
+        if aggregated:
+            return aggregated
+
+        raise ValueError("流式 chat API 未返回任何内容")
+
+    def _extract_text_from_delta(self, delta: Dict[str, Any]) -> str:
+        """从流式 delta 片段中提取文本，忽略思考过程内容"""
+        if not delta:
+            return ""
+
+        fragments: List[str] = []
+
+        def append_from_content(content_value: Any) -> None:
+            if isinstance(content_value, list):
+                for part in content_value:
+                    if isinstance(part, dict):
+                        part_type = (part.get("type") or "").lower()
+                        if part_type in {"thinking", "reasoning", "analysis", "thought"}:
+                            continue
+                        text_value = part.get("text")
+                        if text_value:
+                            fragments.append(text_value)
+                    elif isinstance(part, str):
+                        fragments.append(part)
+            elif isinstance(content_value, dict):
+                text_value = content_value.get("text")
+                if text_value:
+                    fragments.append(text_value)
+            elif isinstance(content_value, str):
+                fragments.append(content_value)
+
+        append_from_content(delta.get("content"))
+
+        text_field = delta.get("text")
+        if isinstance(text_field, str):
+            fragments.append(text_field)
+
+        return "".join(fragments)
+
+    def _chat_completion_non_stream(self, payload: Dict[str, Any]) -> str:
+        """以非流式方式调用 chat API"""
+        url, headers = self._get_chat_api_request_params()
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=DEFAULT_REQUEST_TIMEOUT
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"API请求失败: {response.status_code} - {response.text}")
+
+        result = response.json()
+        return self._parse_chat_response(result)
+
+    def _parse_chat_response(self, result: Dict[str, Any]) -> str:
+        """从标准 chat completion 响应中提取内容"""
+        if "choices" not in result or len(result["choices"]) == 0:
+            raise ValueError("chat API 响应缺少 choices 字段或为空")
+
+        choice = result["choices"][0]
+        message = choice.get("message")
+        if not message:
+            raise ValueError("chat API 响应缺少 message 字段")
+
+        return self._extract_content_from_message(message)
+
+    def _find_data_url_in_content(self, content: str) -> Optional[str]:
+        """在字符串中查找 data:image 数据"""
+        if not content:
+            return None
+
+        stripped = content.strip()
+        if stripped.startswith('data:image'):
+            return stripped
+
+        match = re.search(DATA_URL_PATTERN, stripped, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+        return None
 
     def get_supported_sizes(self) -> list:
         """获取支持的图片尺寸"""
