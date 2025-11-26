@@ -2,7 +2,7 @@
 import base64
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 from flask import Blueprint, request, jsonify, Response, send_file
 from backend.services.image import get_image_service, ImageTaskStateStore
 from backend.services.history import get_history_service
@@ -249,6 +249,9 @@ def stream_image_task(task_id: str):
         - data: {...}
 
     前端使用 EventSource 订阅此接口。
+
+    为了保证前端能实时展示状态，本接口会在监听 Redis 之前，先将当前
+    已完成/失败的页面补发给新订阅者（断线重连或晚订阅场景）。
     """
     try:
         user = get_current_user()
@@ -269,11 +272,153 @@ def stream_image_task(task_id: str):
                 "error": "无权访问此任务"
             }), 403
 
+        task_status = str(task.get("status") or "").lower()
+
         # 订阅 Redis Pub/Sub 频道
         pubsub = TaskStore.subscribe_events(TaskType.IMAGE, task_id)
 
         def event_stream():
             try:
+                initial_finished = {"value": False}
+
+                def emit_event(event_type: str, event_data: Dict[str, Any]):
+                    yield f"event: {event_type}\n"
+                    yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+                def sort_index(value: str) -> int:
+                    try:
+                        return int(value)
+                    except (TypeError, ValueError):
+                        return 0
+
+                def get_phase(index_key: str, page_type_map: Dict[str, str]) -> str:
+                    return "cover" if page_type_map.get(index_key) == "cover" else "content"
+
+                def build_finish_payload(state_data: Optional[Dict[str, Any]]):
+                    result_raw = task.get("result")
+                    finish_data: Optional[Dict[str, Any]] = None
+
+                    if isinstance(result_raw, dict):
+                        finish_data = result_raw
+                    elif isinstance(result_raw, str) and result_raw.strip():
+                        try:
+                            parsed = json.loads(result_raw)
+                            if isinstance(parsed, dict):
+                                finish_data = parsed
+                        except json.JSONDecodeError:
+                            pass
+
+                    status_lower = task_status
+                    is_terminal = status_lower in (TaskStatus.FINISHED.value, TaskStatus.FAILED.value)
+
+                    if not finish_data and state_data and is_terminal:
+                        generated_map = state_data.get("generated") or {}
+                        failed_map = state_data.get("failed") or {}
+                        total_pages = len(state_data.get("pages") or [])
+
+                        ordered_images = [
+                            generated_map[key]
+                            for key in sorted(generated_map.keys(), key=sort_index)
+                            if generated_map.get(key)
+                        ]
+
+                        failed_indices: List[int] = []
+                        for key in sorted(failed_map.keys(), key=sort_index):
+                            try:
+                                failed_indices.append(int(key))
+                            except (TypeError, ValueError):
+                                continue
+
+                        finish_data = {
+                            "success": status_lower == TaskStatus.FINISHED.value,
+                            "task_id": task_id,
+                            "images": ordered_images,
+                            "total": total_pages,
+                            "completed": len(ordered_images),
+                            "failed": len(failed_indices),
+                            "failed_indices": failed_indices,
+                        }
+
+                    if finish_data:
+                        finish_data.setdefault("task_id", task_id)
+                    return finish_data
+
+                def emit_initial_state():
+                    state = ImageTaskStateStore.load_state(task_id)
+                    if not state:
+                        return
+
+                    generated = state.get("generated") or {}
+                    failed = state.get("failed") or {}
+                    candidates_map = state.get("candidates") or {}
+                    pages = state.get("pages") or []
+
+                    page_type_map: Dict[str, str] = {}
+                    for page in pages:
+                        index = page.get("index")
+                        if index is None:
+                            continue
+                        page_type_map[str(index)] = page.get("type") or ""
+
+                    # 补发已完成的页面
+                    for index_key in sorted(generated.keys(), key=sort_index):
+                        filename = generated.get(index_key)
+                        if not filename:
+                            continue
+
+                        try:
+                            index = int(index_key)
+                        except (TypeError, ValueError):
+                            continue
+
+                        candidate_files = candidates_map.get(index_key) or [filename]
+                        candidate_urls = [f"/api/images/{f}" for f in candidate_files]
+
+                        event_data = {
+                            "index": index,
+                            "status": "done",
+                            "image_url": f"/api/images/{filename}",
+                            "candidates": candidate_urls,
+                            "phase": get_phase(index_key, page_type_map),
+                        }
+
+                        for chunk in emit_event("complete", event_data):
+                            yield chunk
+
+                    # 补发失败的页面
+                    for index_key in sorted(failed.keys(), key=sort_index):
+                        message = failed.get(index_key) or "图片生成失败"
+
+                        try:
+                            index = int(index_key)
+                        except (TypeError, ValueError):
+                            continue
+
+                        event_data = {
+                            "index": index,
+                            "status": "error",
+                            "message": message,
+                            "retryable": True,
+                            "phase": get_phase(index_key, page_type_map),
+                        }
+
+                        for chunk in emit_event("error", event_data):
+                            yield chunk
+
+                    finish_payload = build_finish_payload(state)
+                    if finish_payload:
+                        initial_finished["value"] = True
+                        for chunk in emit_event("finish", finish_payload):
+                            yield chunk
+
+                # 先补发已有状态
+                for chunk in emit_initial_state():
+                    yield chunk
+
+                if initial_finished["value"]:
+                    return
+
+                # 再监听新的事件
                 for message in pubsub.listen():
                     if message.get("type") != "message":
                         continue
@@ -290,8 +435,8 @@ def stream_image_task(task_id: str):
                     event_type = payload.get("event") or "message"
                     event_data = payload.get("data") or {}
 
-                    yield f"event: {event_type}\n"
-                    yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+                    for chunk in emit_event(event_type, event_data):
+                        yield chunk
 
                     # finish 事件后结束流
                     if event_type == "finish":
