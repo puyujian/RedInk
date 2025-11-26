@@ -326,7 +326,12 @@ export function subscribeImageTask(
   onStreamError: (error: Error) => void
 ): EventSource {
   const userId = getUserId()
-  const url = `${API_BASE_URL}/generate/stream/${taskId}?user_id=${encodeURIComponent(userId)}`
+  const accessToken = getStoredAccessToken()
+  const params = new URLSearchParams({ user_id: userId })
+  if (accessToken) {
+    params.set('access_token', accessToken)
+  }
+  const url = `${API_BASE_URL}/generate/stream/${taskId}?${params.toString()}`
   const eventSource = new EventSource(url)
 
   eventSource.addEventListener('progress', (e: MessageEvent) => {

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import HomeView from '../views/HomeView.vue'
 import OutlineView from '../views/OutlineView.vue'
 import GenerateView from '../views/GenerateView.vue'
@@ -16,24 +17,39 @@ const router = createRouter({
     {
       path: '/outline',
       name: 'outline',
-      component: OutlineView
+      component: OutlineView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/generate',
       name: 'generate',
-      component: GenerateView
+      component: GenerateView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/result',
       name: 'result',
-      component: ResultView
+      component: ResultView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/history',
       name: 'history',
-      component: HistoryView
+      component: HistoryView,
+      meta: { requiresAuth: true }
     }
   ]
+})
+
+router.beforeEach((to, from, next) => {
+  const authStore = useAuthStore()
+
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    alert('请先登录才能使用此功能')
+    next({ name: 'home' })
+  } else {
+    next()
+  }
 })
 
 export default router
