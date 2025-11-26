@@ -368,7 +368,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             ValueError: 响应格式不符合预期或无法提取图片数据
             Exception: API请求失败或图片下载失败
         """
-        logger.info("🔄 使用流式模式生成图片")
+        logger.info("[STREAMING] 使用流式模式生成图片")
 
         # 在发送请求前对提示词进行长度检查和预处理
         safe_prompt = self._prepare_chat_prompt(prompt)
@@ -394,7 +394,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         }
 
         logger.info(
-            f"Chat API 流式请求: model={model}, size={size}, stream={payload['stream']}"
+            f"[STREAMING] Chat API 流式请求: model={model}, size={size}, "
+            f"stream={payload['stream']}, prompt_length={len(safe_prompt)}"
         )
 
         # 使用流式请求，设置合理的超时时间
@@ -472,7 +473,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             ValueError: 响应格式不符合预期或无法提取图片数据
             Exception: API请求失败或图片下载失败
         """
-        logger.info("📡 使用非流式模式生成图片")
+        logger.info("[NON-STREAMING] 使用非流式模式生成图片")
 
         # 在发送请求前对提示词进行长度检查和预处理
         safe_prompt = self._prepare_chat_prompt(prompt)
@@ -496,7 +497,10 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             "size": size
         }
 
-        logger.info(f"Chat API 请求 payload: model={model}, size={size}")
+        logger.info(
+            f"[NON-STREAMING] Chat API 请求: model={model}, size={size}, "
+            f"prompt_length={len(safe_prompt)}"
+        )
 
         response = requests.post(
             url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
@@ -584,7 +588,10 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             "size": size
         }
 
-        logger.info(f"Chat API 请求 payload: model={model}, size={size}")
+        logger.info(
+            f"[NON-STREAMING] Chat API 请求: model={model}, size={size}, "
+            f"prompt_length={len(safe_prompt)}"
+        )
 
         response = requests.post(
             url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
