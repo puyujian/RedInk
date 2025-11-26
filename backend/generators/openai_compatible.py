@@ -6,6 +6,7 @@ import re
 import logging
 from functools import wraps
 from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from .base import ImageGeneratorBase
 
@@ -791,7 +792,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
     def _download_all_images_from_urls(self, urls: List[str]) -> Dict[str, Any]:
         """
-        下载所有候选图片
+        并发下载所有候选图片
 
         Args:
             urls: 图片URL列表
@@ -809,25 +810,55 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         if not urls:
             raise ValueError("图片URL列表为空")
 
-        candidates = []
-        errors = []
+        def download_single_image(idx: int, url: str) -> tuple:
+            """
+            下载单张图片
 
-        for idx, url in enumerate(urls):
+            Args:
+                idx: 图片索引
+                url: 图片URL
+
+            Returns:
+                (idx, image_data, error) 元组
+            """
             try:
                 logger.info(f"下载候选图片 {idx + 1}/{len(urls)}: {url[:100]}")
                 img_response = requests.get(url, timeout=DEFAULT_DOWNLOAD_TIMEOUT)
 
                 if img_response.status_code == 200 and img_response.content:
-                    candidates.append(img_response.content)
                     logger.info(f"成功下载候选图片 {idx + 1}")
+                    return (idx, img_response.content, None)
                 else:
                     error_msg = f"下载失败: status={img_response.status_code}"
                     logger.warning(f"候选图片 {idx + 1} {error_msg}")
-                    errors.append(error_msg)
+                    return (idx, None, error_msg)
 
             except Exception as e:
                 logger.warning(f"候选图片 {idx + 1} 下载异常: {e}")
-                errors.append(str(e))
+                return (idx, None, str(e))
+
+        # 使用线程池并发下载，最多10个线程
+        max_workers = min(len(urls), 10)
+        results = [None] * len(urls)  # 保持顺序
+        errors = []
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有下载任务
+            future_to_idx = {
+                executor.submit(download_single_image, idx, url): idx
+                for idx, url in enumerate(urls)
+            }
+
+            # 收集结果
+            for future in as_completed(future_to_idx):
+                idx, image_data, error = future.result()
+                if image_data:
+                    results[idx] = image_data
+                else:
+                    errors.append(error)
+
+        # 过滤掉 None 值，保持原始顺序
+        candidates = [img for img in results if img is not None]
 
         if not candidates:
             raise Exception(
