@@ -294,7 +294,7 @@
 }
 
 /* 移动端适配 */
-@media (max-width: 767px) {
+@media (max-width: 768px) {
   .stats-overview {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -330,8 +330,13 @@
   }
 
   .search-mini input {
-    padding: 10px 12px 10px 38px;
-    font-size: 15px;
+    padding: 12px 12px 12px 40px; /* Larger tap area */
+    font-size: 16px; /* Prevent zoom */
+    height: 44px;
+  }
+  
+  .search-mini .icon {
+    font-size: 18px;
   }
 
   .gallery-grid {
@@ -374,8 +379,11 @@
   }
 
   .page-btn {
-    padding: 8px 12px;
+    padding: 10px 16px;
     font-size: 14px;
+    height: 44px; /* Touch target */
+    display: flex;
+    align-items: center;
   }
 
   .empty-state-large {
@@ -395,8 +403,8 @@
   }
 }
 
-/* 小屏手机适配 */
-@media (max-width: 480px) {
+/* 小屏手机适配 (320px - 428px) */
+@media (max-width: 428px) {
   .gallery-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;

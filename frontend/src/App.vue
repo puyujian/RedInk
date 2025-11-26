@@ -48,7 +48,11 @@
 
     <!-- 主内容区 -->
     <main class="layout-main">
-      <RouterView />
+      <RouterView v-slot="{ Component }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </RouterView>
     </main>
 
     <!-- 登录/注册模态框 -->

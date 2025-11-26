@@ -35,5 +35,11 @@
   --mobile-breakpoint: 768px;
   --sidebar-backdrop-bg: rgba(15, 23, 42, 0.45);
   --sidebar-toggle-size: 44px;
-  --mobile-header-height: 56px;
+  --mobile-header-height: 60px;
+  --touch-target-size: 44px;
+  --mobile-safe-padding: 16px;
+
+  /* 动画 */
+  --transition-page: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  --transition-fast: 0.2s ease;
 }
