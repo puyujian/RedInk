@@ -58,10 +58,11 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { RouterView, RouterLink, useRoute } from 'vue-router'
+import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import UserMenu from './components/UserMenu.vue'
 import { useAuthStore } from './stores/auth'
+import { useGeneratorStore } from './stores/generator'
 
 // ============================================================================
 // State
@@ -70,7 +71,9 @@ import { useAuthStore } from './stores/auth'
 const showAuthModal = ref(false)
 const isSidebarOpen = ref(false)
 const authStore = useAuthStore()
+const generatorStore = useGeneratorStore()
 const route = useRoute()
+const router = useRouter()
 
 // ============================================================================
 // Sidebar Control
@@ -125,6 +128,23 @@ watch(isSidebarOpen, (isOpen) => {
     }
   }
 })
+
+// 监听认证状态变化
+watch(
+  () => authStore.isAuthenticated,
+  (isAuthenticated) => {
+    if (!isAuthenticated) {
+      // 用户登出，清理生成器状态
+      generatorStore.reset()
+      
+      // 如果当前在创作相关页面，跳转回首页
+      const creationPaths = ['/outline', '/generate', '/result']
+      if (creationPaths.some(path => route.path.startsWith(path))) {
+        router.push('/')
+      }
+    }
+  }
+)
 
 onMounted(() => {
   // 应用启动时初始化认证状态

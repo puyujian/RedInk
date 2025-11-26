@@ -293,10 +293,12 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getHistoryList, getHistoryStats, searchHistory, deleteHistory, getHistory, type HistoryRecord, regenerateImage as apiRegenerateImage, updateHistory } from '../api'
+import { useAuthStore } from '../stores/auth'
 import { useGeneratorStore } from '../stores/generator'
 
 const router = useRouter()
 const store = useGeneratorStore()
+const authStore = useAuthStore()
 
 const records = ref<HistoryRecord[]>([])
 const loading = ref(false)
@@ -317,6 +319,19 @@ const titleExpanded = ref(false)
 const rawInputExpanded = ref(false)
 // 大纲模态框显示状态
 const showOutlineModal = ref(false)
+
+// 监听登录状态变化
+watch(() => authStore.isAuthenticated, (isAuthenticated) => {
+  if (isAuthenticated) {
+    loadData()
+    loadStats()
+  } else {
+    records.value = []
+    stats.value = null
+    currentPage.value = 1
+    totalPages.value = 1
+  }
+})
 
 const loadData = async () => {
   loading.value = true
