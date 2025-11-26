@@ -31,7 +31,7 @@ COPY backend /app/backend
 COPY image_providers.yaml.example /app/image_providers.yaml.example
 
 # Create necessary directories
-RUN mkdir -p /app/output /app/history
+RUN mkdir -p /app/output /app/history /app/data
 
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH" \

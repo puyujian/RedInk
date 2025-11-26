@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Redis 服务 - 用于任务队列和缓存
+  # Redis 服务 - 用于任务队列和缓存（必需）
   redis:
     image: redis:7-alpine
     container_name: redink-redis
@@ -19,11 +19,13 @@ services:
     networks:
       - redink-network
 
-  # MySQL 数据库服务
+  # 可选 MySQL 服务（仅当需要外部数据库时启用）
   mysql:
     image: mysql:8.0
     container_name: redink-mysql
     restart: unless-stopped
+    profiles:
+      - mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-redink_root_pass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-redink}
@@ -43,7 +45,7 @@ services:
     networks:
       - redink-network
 
-  # 后端服务
+  # 后端服务（默认使用 SQLite）
   backend:
     build:
       context: .
@@ -52,8 +54,6 @@ services:
     restart: unless-stopped
     depends_on:
       redis:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
     environment:
       # API Keys
@@ -67,8 +67,8 @@ services:
       FLASK_HOST: 0.0.0.0
       FLASK_PORT: 12398
       
-      # 数据库配置
-      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-redink}:${MYSQL_PASSWORD:-redink_pass}@mysql:3306/${MYSQL_DATABASE:-redink}
+      # 数据库配置（默认 SQLite，可通过 .env 覆盖为 MySQL）
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/redink.db}
       
       # Redis 配置
       REDIS_URL: redis://redis:6379/0
@@ -88,7 +88,8 @@ services:
     volumes:
       - ./output:/app/output
       - ./history:/app/history
-      - ./image_providers.yaml:/app/image_providers.yaml
+      - ./data:/app/data
+      - ./image_providers.yaml:/app/image_providers.yaml:ro
     networks:
       - redink-network
     healthcheck:
@@ -97,9 +98,17 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
-    command: sh -c "sleep 10 && python -m backend.init_db && python -m backend.app"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if printf '%s' "$DATABASE_URL" | grep -qi 'mysql'; then
+          echo "Detected MySQL DATABASE_URL, waiting for database..."
+          sleep ${MYSQL_WAIT_SECONDS:-10}
+        fi
+        python -m backend.init_db && python -m backend.app
 
-  # Worker 服务 - 处理异步任务
+  # Worker 服务 - 处理异步任务（必需）
   worker:
     build:
       context: .
@@ -108,8 +117,6 @@ services:
     restart: unless-stopped
     depends_on:
       redis:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
       backend:
         condition: service_healthy
@@ -120,8 +127,8 @@ services:
       TEXT_API_KEY: ${TEXT_API_KEY}
       TEXT_API_BASE_URL: ${TEXT_API_BASE_URL:-https://api.bltcy.ai}
       
-      # 数据库配置
-      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-redink}:${MYSQL_PASSWORD:-redink_pass}@mysql:3306/${MYSQL_DATABASE:-redink}
+      # 数据库配置（默认 SQLite）
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/redink.db}
       
       # Redis 配置
       REDIS_URL: redis://redis:6379/0
@@ -131,7 +138,8 @@ services:
     volumes:
       - ./output:/app/output
       - ./history:/app/history
-      - ./image_providers.yaml:/app/image_providers.yaml
+      - ./data:/app/data
+      - ./image_providers.yaml:/app/image_providers.yaml:ro
     networks:
       - redink-network
     command: python backend/worker.py
