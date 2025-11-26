@@ -263,3 +263,81 @@ export async function getMe(): Promise<AuthUser> {
 
   throw new Error('获取用户信息失败')
 }
+
+/**
+ * 解析 JWT token 的 payload（不验证签名）
+ *
+ * @param token - JWT token 字符串
+ * @returns 解码后的 payload 对象，解析失败返回 null
+ */
+export function decodeToken(token: string): any | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+
+    const payload = parts[1]
+    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    return JSON.parse(decoded)
+  } catch (err) {
+    console.warn('[Auth] 解析 token 失败:', err)
+    return null
+  }
+}
+
+/**
+ * 检查 token 是否即将过期（5分钟内）
+ *
+ * @param token - JWT token 字符串
+ * @returns true 表示即将过期，false 表示还有效
+ */
+export function isTokenExpiringSoon(token: string | null, thresholdSeconds: number = 300): boolean {
+  if (!token) return true
+
+  const payload = decodeToken(token)
+  if (!payload || !payload.exp) return true
+
+  const now = Math.floor(Date.now() / 1000)
+  const expiresAt = payload.exp
+  const remainingSeconds = expiresAt - now
+
+  return remainingSeconds < thresholdSeconds
+}
+
+/**
+ * 确保 access token 有效（如果即将过期则刷新）
+ *
+ * 此函数用于在创建 SSE 连接等长连接前，主动检查并刷新 token
+ *
+ * @returns 有效的 token，如果无法获取有效 token 则返回 null
+ */
+export async function ensureValidToken(): Promise<string | null> {
+  const currentToken = getStoredAccessToken()
+
+  // 如果没有 token，直接返回
+  if (!currentToken) {
+    console.log('[Auth] 未登录，跳过 token 检查')
+    return null
+  }
+
+  // 检查 token 是否即将过期
+  if (isTokenExpiringSoon(currentToken)) {
+    console.log('[Auth] Token 即将过期，正在刷新...')
+
+    try {
+      const result = await refresh()
+      if (result.success && result.access_token) {
+        console.log('[Auth] Token 刷新成功')
+        return result.access_token
+      } else {
+        console.error('[Auth] Token 刷新失败:', result.error)
+        return null
+      }
+    } catch (err) {
+      console.error('[Auth] Token 刷新出错:', err)
+      return null
+    }
+  }
+
+  // Token 仍然有效
+  return currentToken
+}
