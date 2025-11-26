@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { getUserId } from '../utils/userId'
-import { getStoredAccessToken, saveAccessToken } from './auth'
+import { getStoredAccessToken, saveAccessToken, ensureValidToken } from './auth'
 
 export const API_BASE_URL = '/api'
 
@@ -313,102 +313,304 @@ export async function createImageTask(
 }
 
 /**
+ * SSE 连接管理器（支持认证失败时自动刷新 token 并重连）
+ */
+class SSEConnectionManager {
+  private eventSource: EventSource | null = null
+  private taskId: string
+  private onProgress: (event: ProgressEvent) => void
+  private onComplete: (event: ProgressEvent) => void
+  private onError: (event: ProgressEvent) => void
+  private onFinish: (event: FinishEvent) => void
+  private onStreamError: (error: Error) => void
+  private reconnectAttempts: number = 0
+  private maxReconnectAttempts: number = 3
+  private isClosed: boolean = false
+  private hasReceivedData: boolean = false
+
+  constructor(
+    taskId: string,
+    onProgress: (event: ProgressEvent) => void,
+    onComplete: (event: ProgressEvent) => void,
+    onError: (event: ProgressEvent) => void,
+    onFinish: (event: FinishEvent) => void,
+    onStreamError: (error: Error) => void
+  ) {
+    this.taskId = taskId
+    this.onProgress = onProgress
+    this.onComplete = onComplete
+    this.onError = onError
+    this.onFinish = onFinish
+    this.onStreamError = onStreamError
+  }
+
+  /**
+   * 连接 SSE 流
+   */
+  connect(): EventSource {
+    if (this.isClosed) {
+      throw new Error('连接管理器已关闭')
+    }
+
+    const userId = getUserId()
+    const params = new URLSearchParams({ user_id: userId })
+
+    // 获取最新的 token
+    const token = getStoredAccessToken()
+    if (token) {
+      params.append('access_token', token)
+    }
+
+    const url = `${API_BASE_URL}/generate/stream/${this.taskId}?${params.toString()}`
+    console.log(`[SSE] 正在连接: ${url} (尝试 ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`)
+
+    const eventSource = new EventSource(url)
+    this.eventSource = eventSource
+
+    // 注册事件监听器
+    this.setupEventListeners(eventSource)
+
+    return eventSource
+  }
+
+  /**
+   * 设置 EventSource 事件监听器
+   */
+  private setupEventListeners(eventSource: EventSource): void {
+    eventSource.addEventListener('progress', (e: MessageEvent) => {
+      this.hasReceivedData = true
+      try {
+        const data = JSON.parse(e.data) as ProgressEvent
+        this.onProgress(data)
+      } catch (err) {
+        console.error('[SSE] 解析 progress 事件失败:', err)
+      }
+    })
+
+    eventSource.addEventListener('complete', (e: MessageEvent) => {
+      this.hasReceivedData = true
+      try {
+        const data = JSON.parse(e.data) as ProgressEvent
+        this.onComplete(data)
+      } catch (err) {
+        console.error('[SSE] 解析 complete 事件失败:', err)
+      }
+    })
+
+    eventSource.addEventListener('error', (e: MessageEvent) => {
+      // 来自服务器的错误事件（非连接错误）
+      if (e.data) {
+        this.hasReceivedData = true
+        try {
+          const data = JSON.parse(e.data) as ProgressEvent
+          this.onError(data)
+        } catch (err) {
+          console.error('[SSE] 解析 error 事件失败:', err)
+        }
+      }
+    })
+
+    eventSource.addEventListener('finish', (e: MessageEvent) => {
+      this.hasReceivedData = true
+      try {
+        const data = JSON.parse(e.data) as FinishEvent
+        this.onFinish(data)
+        this.close()
+      } catch (err) {
+        console.error('[SSE] 解析 finish 事件失败:', err)
+      }
+    })
+
+    eventSource.onerror = async (event: Event) => {
+      await this.handleConnectionError(eventSource, event)
+    }
+  }
+
+  /**
+   * 处理连接错误
+   */
+  private async handleConnectionError(eventSource: EventSource, event: Event): Promise<void> {
+    const readyState = eventSource.readyState
+
+    console.error('[SSE] 连接错误:', {
+      readyState,
+      readyStateName: this.getReadyStateName(readyState),
+      reconnectAttempts: this.reconnectAttempts,
+      hasReceivedData: this.hasReceivedData,
+      event
+    })
+
+    // 如果正在重连（EventSource 内部重连机制），暂不处理
+    if (readyState === EventSource.CONNECTING) {
+      console.warn('[SSE] 连接断开，EventSource 正在自动重连...')
+      return
+    }
+
+    // 连接已关闭（readyState = 2）
+    if (readyState === EventSource.CLOSED) {
+      console.error('[SSE] 连接已关闭 (readyState=2)')
+
+      // 如果已经收到过数据，说明之前连接是成功的，可能是任务完成或其他正常关闭
+      if (this.hasReceivedData) {
+        console.log('[SSE] 连接在接收数据后关闭，可能是正常完成')
+        this.close()
+        return
+      }
+
+      // 如果从未收到数据，可能是认证失败或任务不存在
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        console.log('[SSE] 尝试刷新 token 后重连...')
+
+        try {
+          // 尝试刷新 token
+          const newToken = await this.refreshToken()
+
+          if (newToken) {
+            console.log('[SSE] Token 刷新成功，正在重新连接...')
+            this.reconnectAttempts++
+
+            // 关闭旧连接
+            try {
+              eventSource.close()
+            } catch (e) {
+              console.warn('[SSE] 关闭旧连接失败:', e)
+            }
+
+            // 短暂延迟后重连（避免请求过快）
+            await new Promise(resolve => setTimeout(resolve, 1000))
+
+            // 创建新连接
+            if (!this.isClosed) {
+              this.connect()
+            }
+            return
+          } else {
+            console.error('[SSE] Token 刷新失败')
+          }
+        } catch (err) {
+          console.error('[SSE] 刷新 token 时出错:', err)
+        }
+      }
+
+      // 超过重试次数或无法刷新 token，报告错误
+      const errorMessage = this.buildErrorMessage()
+      this.onStreamError(new Error(errorMessage))
+      this.close()
+    }
+  }
+
+  /**
+   * 刷新访问令牌
+   */
+  private async refreshToken(): Promise<string | null> {
+    try {
+      // 延迟导入，避免循环依赖
+      const { useAuthStore } = await import('../stores/auth')
+      const authStore = useAuthStore()
+      return await authStore.refreshToken()
+    } catch (err) {
+      console.error('[SSE] 刷新 token 失败:', err)
+      return null
+    }
+  }
+
+  /**
+   * 构建用户友好的错误消息
+   */
+  private buildErrorMessage(): string {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      return `SSE 连接失败，已重试 ${this.reconnectAttempts} 次。可能原因：
+1. 身份验证已过期，请重新登录
+2. 任务不存在或已过期
+3. 网络连接不稳定
+
+建议：刷新页面后重试，或检查登录状态`
+    }
+
+    return `SSE 连接失败。可能原因：
+1. 认证失败，请尝试重新登录
+2. 任务不存在或已过期  
+3. 网络连接问题
+
+请刷新页面后重试`
+  }
+
+  /**
+   * 获取 readyState 的可读名称
+   */
+  private getReadyStateName(state: number): string {
+    switch (state) {
+      case EventSource.CONNECTING:
+        return 'CONNECTING (0)'
+      case EventSource.OPEN:
+        return 'OPEN (1)'
+      case EventSource.CLOSED:
+        return 'CLOSED (2)'
+      default:
+        return `UNKNOWN (${state})`
+    }
+  }
+
+  /**
+   * 关闭连接
+   */
+  close(): void {
+    this.isClosed = true
+    if (this.eventSource) {
+      try {
+        this.eventSource.close()
+        console.log('[SSE] 连接已关闭')
+      } catch (err) {
+        console.warn('[SSE] 关闭连接时出错:', err)
+      }
+      this.eventSource = null
+    }
+  }
+
+  /**
+   * 获取当前的 EventSource 实例
+   */
+  getEventSource(): EventSource | null {
+    return this.eventSource
+  }
+}
+
+/**
  * 订阅图片生成任务事件（SSE）
  *
  * 使用 EventSource 订阅 Redis Pub/Sub 事件
+ * 
+ * 新特性：
+ * - 自动检测 token 过期并刷新
+ * - 智能重连机制（最多 3 次）
+ * - 详细的错误日志和用户提示
  */
-export function subscribeImageTask(
+export async function subscribeImageTask(
   taskId: string,
   onProgress: (event: ProgressEvent) => void,
   onComplete: (event: ProgressEvent) => void,
   onError: (event: ProgressEvent) => void,
   onFinish: (event: FinishEvent) => void,
   onStreamError: (error: Error) => void
-): EventSource {
-  const userId = getUserId()
-
-  // 构建 URL，添加必要的参数
-  const params = new URLSearchParams({
-    user_id: userId
-  })
-
-  // 如果用户已登录，添加 access_token 参数（SSE 无法发送自定义 headers）
-  const token = getStoredAccessToken()
-  if (token) {
-    params.append('access_token', token)
+): Promise<EventSource> {
+  // 在建立连接前，确保 token 有效（如果即将过期则刷新）
+  try {
+    await ensureValidToken()
+    console.log('[SSE] Token 验证完成，准备建立连接')
+  } catch (err) {
+    console.warn('[SSE] Token 预检失败，仍尝试连接:', err)
   }
 
-  const url = `${API_BASE_URL}/generate/stream/${taskId}?${params.toString()}`
-  const eventSource = new EventSource(url)
+  const manager = new SSEConnectionManager(
+    taskId,
+    onProgress,
+    onComplete,
+    onError,
+    onFinish,
+    onStreamError
+  )
 
-  eventSource.addEventListener('progress', (e: MessageEvent) => {
-    try {
-      const data = JSON.parse(e.data) as ProgressEvent
-      onProgress(data)
-    } catch (err) {
-      console.error('解析 progress 事件失败:', err)
-    }
-  })
-
-  eventSource.addEventListener('complete', (e: MessageEvent) => {
-    try {
-      const data = JSON.parse(e.data) as ProgressEvent
-      onComplete(data)
-    } catch (err) {
-      console.error('解析 complete 事件失败:', err)
-    }
-  })
-
-  eventSource.addEventListener('error', (e: MessageEvent) => {
-    // SSE error event from server (not connection error)
-    if (e.data) {
-      try {
-        const data = JSON.parse(e.data) as ProgressEvent
-        onError(data)
-      } catch (err) {
-        console.error('解析 error 事件失败:', err)
-      }
-    }
-  })
-
-  eventSource.addEventListener('finish', (e: MessageEvent) => {
-    try {
-      const data = JSON.parse(e.data) as FinishEvent
-      onFinish(data)
-      eventSource.close()
-    } catch (err) {
-      console.error('解析 finish 事件失败:', err)
-    }
-  })
-
-  eventSource.onerror = (event: Event) => {
-    // 根据 readyState 判断错误类型
-    let errorMessage = 'SSE 连接错误'
-
-    if (eventSource.readyState === EventSource.CONNECTING) {
-      // 正在重连
-      errorMessage = '正在尝试重新连接...'
-      console.warn('SSE 连接断开，正在重连...')
-      return // 让 EventSource 自动重连
-    } else if (eventSource.readyState === EventSource.CLOSED) {
-      // 连接已关闭（通常是因为认证失败、404 等）
-      errorMessage = 'SSE 连接失败。可能原因：\n' +
-        '1. 认证失败，请尝试重新登录\n' +
-        '2. 任务不存在或已过期\n' +
-        '3. 网络连接问题\n' +
-        '请刷新页面后重试'
-    }
-
-    console.error('SSE 连接错误:', {
-      readyState: eventSource.readyState,
-      event
-    })
-
-    onStreamError(new Error(errorMessage))
-    eventSource.close()
-  }
-
-  return eventSource
+  return manager.connect()
 }
 
 /**
@@ -437,8 +639,8 @@ export async function generateImagesPost(
       return null
     }
 
-    // 订阅 SSE 事件
-    return subscribeImageTask(
+    // 订阅 SSE 事件（建立连接前会自动校验 token）
+    return await subscribeImageTask(
       createResult.task_id,
       onProgress,
       onComplete,
