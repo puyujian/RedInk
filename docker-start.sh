@@ -58,13 +58,38 @@ fi
 
 # 创建必要的目录
 echo "创建必要的目录..."
-mkdir -p output history
+mkdir -p output history data
 echo -e "${GREEN}✓ 目录创建完成${NC}"
 echo ""
 
+# 检查数据库模式
+PROFILE_FLAG=""
+DB_MODE="SQLite（默认）"
+if grep -E '^DATABASE_URL=.*mysql' .env >/dev/null 2>&1; then
+    PROFILE_FLAG="--profile mysql"
+    DB_MODE="MySQL（检测到 DATABASE_URL 使用 mysql）"
+fi
+
+echo -e "当前数据库模式: ${YELLOW}${DB_MODE}${NC}"
+if [ -n "$PROFILE_FLAG" ]; then
+    echo -e "${YELLOW}已自动启用 docker compose --profile mysql${NC}"
+else
+    echo -e "${YELLOW}如需 MySQL，请修改 .env 并使用 mysql profile${NC}"
+fi
+
+echo ""
+
+compose() {
+    if [ -n "$PROFILE_FLAG" ]; then
+        docker compose $PROFILE_FLAG "$@"
+    else
+        docker compose "$@"
+    fi
+}
+
 # 提示用户选择操作
 echo "请选择操作:"
-echo "  1) 启动所有服务（首次启动会自动构建镜像）"
+echo "  1) 启动所有服务"
 echo "  2) 重新构建并启动"
 echo "  3) 仅构建镜像"
 echo "  4) 停止所有服务"
@@ -78,21 +103,21 @@ case $choice in
     1)
         echo ""
         echo "启动所有服务..."
-        docker compose up -d
+        compose up -d
         echo ""
         echo -e "${GREEN}✓ 服务启动成功！${NC}"
         ;;
     2)
         echo ""
         echo "重新构建并启动服务..."
-        docker compose up -d --build
+        compose up -d --build
         echo ""
         echo -e "${GREEN}✓ 服务重建并启动成功！${NC}"
         ;;
     3)
         echo ""
         echo "构建镜像..."
-        docker compose build
+        compose build
         echo ""
         echo -e "${GREEN}✓ 镜像构建完成！${NC}"
         exit 0
@@ -100,7 +125,7 @@ case $choice in
     4)
         echo ""
         echo "停止所有服务..."
-        docker compose down
+        compose down
         echo ""
         echo -e "${GREEN}✓ 服务已停止${NC}"
         exit 0
@@ -110,7 +135,7 @@ case $choice in
         echo -e "${RED}警告: 这将删除所有数据，包括数据库和生成的文件！${NC}"
         read -p "确定要继续吗? (yes/no): " confirm
         if [ "$confirm" = "yes" ]; then
-            docker compose down -v
+            compose down -v
             echo -e "${GREEN}✓ 服务已停止，数据已删除${NC}"
         else
             echo "操作已取消"
@@ -119,13 +144,13 @@ case $choice in
         ;;
     6)
         echo ""
-        docker compose ps
+        compose ps
         exit 0
         ;;
     7)
         echo ""
         echo "查看最近日志 (按 Ctrl+C 退出)..."
-        docker compose logs -f --tail=100
+        compose logs -f --tail=100
         exit 0
         ;;
     *)
@@ -142,7 +167,7 @@ sleep 5
 # 检查服务状态
 echo ""
 echo "服务状态:"
-docker compose ps
+compose ps
 
 # 检查健康状态
 echo ""

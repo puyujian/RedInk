@@ -51,6 +51,7 @@ dist-ssr/
 # Generated files
 output/
 history/
+data/
 
 # API configurations
 .gemini/
