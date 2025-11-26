@@ -76,9 +76,9 @@
 
 ## 📦 如何自己部署
 
-> 后续考虑发docker版本的，目前还是需要麻烦一点。
+### 方式一：传统部署（需要配置 Python、Node.js 环境）
 
-### 前置要求
+#### 前置要求
 - Python 3.11+
 - Node.js 18+
 - pnpm
@@ -162,6 +162,37 @@ cd frontend
 pnpm dev
 ```
 访问: http://localhost:5173
+
+---
+
+## 🐳 Docker 一键部署（推荐）
+
+> 前端技术栈：**Vue 3 + TypeScript + Vite + Pinia**，生产环境通过 **Nginx** 提供静态资源
+>
+> 后端技术栈：**Python 3.11 + Flask + SQLAlchemy + RQ**，使用 Redis 作为任务队列，MySQL 作为关系型数据库
+
+如果你希望一键启动完整的前后端、数据库和 Redis，可使用 Docker 方案：
+
+1. **准备环境**
+   ```bash
+   cp .env.docker .env              # 填写 API Key、数据库密码、JWT Secret
+   cp image_providers.yaml.example image_providers.yaml
+   ./docker-start.sh                # 或执行 docker compose up -d
+   ```
+2. **主要服务**
+   - `frontend`：Nginx + Vue 编译产物，默认暴露 `80` 端口
+   - `backend`：Flask API，默认暴露 `12398` 端口
+   - `worker`：RQ Worker（处理大纲/图片生成）
+   - `mysql`：MySQL 8.0，自动执行 `init-scripts` 中的初始化脚本
+   - `redis`：Redis 7，负责任务队列和状态存储
+3. **健康检查**
+   - 前端：`curl http://localhost`
+   - 后端：`curl http://localhost:12398/`
+   - Redis：`docker compose exec redis redis-cli ping`
+   - MySQL：`docker compose exec mysql mysqladmin ping -h localhost -u root -p`
+4. **更多说明**
+   - 详细步骤、生产部署建议、常见问题请查看 [`DOCKER.md`](./DOCKER.md)
+   - GitHub Actions 工作流会在 push 到 `main` 分支时自动构建并推送镜像到 GHCR
 
 ---
 
