@@ -17,7 +17,7 @@
     </div>
 
     <div class="card">
-      <div class="grid-cols-4">
+      <TransitionGroup name="list" tag="div" class="grid-cols-4">
         <div v-for="image in store.images" :key="image.index" class="image-card group">
           <!-- Image Area -->
           <div
@@ -84,7 +84,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </TransitionGroup>
     </div>
 
     <!-- 候选图片选择弹窗 -->

@@ -16,7 +16,7 @@
       </div>
     </div>
 
-    <div class="outline-grid">
+    <TransitionGroup name="list" tag="div" class="outline-grid">
       <div 
         v-for="(page, idx) in store.outline.pages" 
         :key="page.index"
@@ -55,13 +55,13 @@
       </div>
 
       <!-- 添加按钮卡片 -->
-      <div class="card add-card-dashed" @click="addPage('content')">
+      <div class="card add-card-dashed" @click="addPage('content')" key="add-button">
         <div class="add-content">
           <div class="add-icon">+</div>
           <span>添加页面</span>
         </div>
       </div>
-    </div>
+    </TransitionGroup>
     
     <div style="height: 100px;"></div>
   </div>

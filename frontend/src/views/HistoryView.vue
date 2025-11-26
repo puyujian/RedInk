@@ -93,7 +93,7 @@
       <p>去创建一个新的作品吧</p>
     </div>
 
-    <div v-else class="gallery-grid">
+    <TransitionGroup v-else name="list" tag="div" class="gallery-grid">
       <div 
         v-for="record in records" 
         :key="record.id" 
@@ -144,7 +144,7 @@
           </div>
         </div>
       </div>
-    </div>
+    </TransitionGroup>
 
     <!-- Pagination -->
     <div v-if="totalPages > 1" class="pagination-wrapper">

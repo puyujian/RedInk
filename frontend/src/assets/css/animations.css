@@ -1,0 +1,102 @@
+/* Global Animations */
+
+/* Fade Transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Slide Up Transition */
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+/* List Transitions (for TransitionGroup) */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.4s ease;
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.list-move {
+  transition: transform 0.4s ease;
+}
+/* Ensure removed items are taken out of flow for smooth movement */
+.list-leave-active {
+  position: absolute; 
+}
+
+/* Scale Transition */
+.scale-enter-active,
+.scale-leave-active {
+  transition: all 0.3s ease;
+}
+.scale-enter-from,
+.scale-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+/* Utility Animation Classes (animate.css style) */
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.6s ease-out forwards;
+}
+
+.animate-slide-up-delay-1 {
+  animation: slideUp 0.6s ease-out 0.1s forwards;
+  opacity: 0;
+}
+
+.animate-slide-up-delay-2 {
+  animation: slideUp 0.6s ease-out 0.2s forwards;
+  opacity: 0;
+}
+
+.animate-slide-up-delay-3 {
+  animation: slideUp 0.6s ease-out 0.3s forwards;
+  opacity: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover Effects */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+}
