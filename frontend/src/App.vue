@@ -108,6 +108,19 @@ function handleEscKey(event: KeyboardEvent) {
 // Lifecycle & Watchers
 // ============================================================================
 
+// 监听路由参数，处理 showAuth=login
+watch(
+  () => route.query,
+  (query) => {
+    if (query.showAuth === 'login') {
+      showAuthModal.value = true
+      // 清除 query 参数，避免刷新页面时再次弹出
+      router.replace({ query: { ...query, showAuth: undefined } })
+    }
+  },
+  { immediate: true }
+)
+
 // 路由变化时关闭侧边栏（移动端）
 watch(
   () => route.path,

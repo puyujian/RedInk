@@ -228,6 +228,8 @@ const isExpanded = ref(false)
 // 监听登录状态变化，自动刷新最近创作
 watch(() => authStore.isAuthenticated, (newValue) => {
   if (newValue) {
+    showLoginHint.value = false
+    error.value = ''
     loadRecent()
   } else {
     // 退出登录时清空最近记录，或者重新加载（如果是显示公开记录的话）
