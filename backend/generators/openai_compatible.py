@@ -104,6 +104,14 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         self.chat_stream_enabled = config.get('chat_stream_enabled', False)
         self.chat_stream_idle_timeout = config.get('chat_stream_idle_timeout', 300)
 
+        # 调试日志：输出关键配置
+        logger.info(
+            f"[CONFIG] OpenAI Compatible Generator 初始化: "
+            f"endpoint_type={self.endpoint_type}, "
+            f"chat_stream_enabled={self.chat_stream_enabled}, "
+            f"model={self.default_model}"
+        )
+
     def validate_config(self) -> bool:
         """验证配置"""
         return bool(self.api_key and self.base_url)
@@ -161,15 +169,23 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         # 支持通过 kwargs 覆盖图片索引
         image_index = kwargs.get("image_index")
 
+        logger.info(
+            f"[GENERATE] 开始生成图片: endpoint_type={self.endpoint_type}, "
+            f"chat_stream_enabled={self.chat_stream_enabled}"
+        )
+
         if self.endpoint_type == 'images':
+            logger.info("[GENERATE] 选择路径: images API")
             return self._generate_via_images_api(prompt, size, model, quality)
         elif self.endpoint_type == 'chat':
             # 根据配置选择流式或非流式模式
             if self.chat_stream_enabled:
+                logger.info("[GENERATE] 选择路径: chat API (流式)")
                 return self._generate_via_chat_api_streaming(
                     prompt, size, model, image_index=image_index
                 )
             else:
+                logger.info("[GENERATE] 选择路径: chat API (非流式)")
                 return self._generate_via_chat_api(
                     prompt, size, model, image_index=image_index
                 )
@@ -554,6 +570,35 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         """
         通过 chat API 生成图片，并返回所有候选图片
 
+        根据 chat_stream_enabled 配置自动选择流式或非流式模式
+
+        Args:
+            prompt: 提示词
+            size: 图片尺寸
+            model: 模型名称
+
+        Returns:
+            {
+                "primary": bytes,
+                "candidates": [bytes, ...],
+                "count": int
+            }
+        """
+        # 根据配置选择流式或非流式模式
+        if self.chat_stream_enabled:
+            return self._generate_via_chat_api_streaming_with_candidates(prompt, size, model)
+        else:
+            return self._generate_via_chat_api_non_streaming_with_candidates(prompt, size, model)
+
+    def _generate_via_chat_api_non_streaming_with_candidates(
+        self,
+        prompt: str,
+        size: str,
+        model: str
+    ) -> Dict[str, Any]:
+        """
+        通过 chat API 非流式模式生成图片，并返回所有候选图片
+
         Args:
             prompt: 提示词
             size: 图片尺寸
@@ -639,6 +684,109 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         preview = content[:200].replace("\n", "\\n")
         raise ValueError(
             f"chat API 响应中未找到可识别的图片数据格式，content 预览: {preview}"
+        )
+
+    def _generate_via_chat_api_streaming_with_candidates(
+        self,
+        prompt: str,
+        size: str,
+        model: str
+    ) -> Dict[str, Any]:
+        """
+        通过 chat API 流式模式生成图片，并返回所有候选图片
+
+        Args:
+            prompt: 提示词
+            size: 图片尺寸
+            model: 模型名称
+
+        Returns:
+            {
+                "primary": bytes,
+                "candidates": [bytes, ...],
+                "count": int
+            }
+        """
+        logger.info("[STREAMING] 使用流式模式生成候选图片")
+
+        # 在发送请求前对提示词进行长度检查和预处理
+        safe_prompt = self._prepare_chat_prompt(prompt)
+
+        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": safe_prompt
+                }
+            ],
+            "temperature": 1.0,
+            "size": size,
+            "stream": True  # 启用流式模式
+        }
+
+        logger.info(
+            f"[STREAMING] Chat API 请求 (候选模式): model={model}, size={size}, "
+            f"stream={payload['stream']}, prompt_length={len(safe_prompt)}"
+        )
+
+        # 使用流式请求，设置合理的超时时间
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            stream=True,
+            timeout=(10, self.chat_stream_idle_timeout)
+        )
+
+        if response.status_code != 200:
+            raise Exception(
+                f"API请求失败: {response.status_code} - {response.text[:500]}"
+            )
+
+        # 解析SSE流，累积所有content
+        content = self._parse_sse_stream(response)
+
+        # 关闭连接
+        response.close()
+
+        if not content:
+            raise ValueError("SSE流中未返回任何内容")
+
+        # 优先检查是否为明显的错误提示
+        self._raise_if_chat_content_is_error(content, prompt)
+
+        # 检测API返回的其他错误消息
+        error_message = self._detect_api_error_message(content)
+        if error_message:
+            raise ValueError(f"图片生成API返回错误: {error_message}")
+
+        # 情况一：base64 data URL
+        if content.startswith("data:image"):
+            image_data = self._decode_base64_image(content)
+            return {
+                "primary": image_data,
+                "candidates": [image_data],
+                "count": 1
+            }
+
+        # 情况二：Markdown图片链接（下载所有候选图片）
+        image_urls = self._extract_image_urls_from_markdown(content)
+        if image_urls:
+            logger.info(f"[STREAMING] 从流式响应中提取到 {len(image_urls)} 个候选图片URL")
+            return self._download_all_images_from_urls(image_urls)
+
+        # 无法识别的格式
+        preview = content[:200].replace("\n", "\\n")
+        raise ValueError(
+            f"SSE流式响应中未找到可识别的图片数据格式 (候选模式)，content 预览: {preview}"
         )
 
     def _download_all_images_from_urls(self, urls: List[str]) -> Dict[str, Any]:
