@@ -43,9 +43,7 @@ services:
 
   # 后端服务（默认使用 SQLite）
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ghcr.io/puyujian/redink/backend:latest
     container_name: redink-backend
     restart: unless-stopped
     depends_on:
@@ -105,9 +103,7 @@ services:
 
   # Worker 服务 - 处理异步任务（必需）
   worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ghcr.io/puyujian/redink/backend:latest
     container_name: redink-worker
     restart: unless-stopped
     depends_on:
@@ -141,9 +137,7 @@ services:
 
   # 前端服务
   frontend:
-    build:
-      context: frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/puyujian/redink/frontend:latest
     container_name: redink-frontend
     restart: unless-stopped
     depends_on:
