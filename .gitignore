@@ -71,3 +71,4 @@ htmlcov/
 *.temp
 test_*.py
 debug_*.py
+redink.db
