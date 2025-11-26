@@ -9,29 +9,15 @@ from backend.services.history import get_history_service
 from backend.task_queue import get_outline_queue, get_image_queue
 from backend.task_queue.task_store import TaskStore, TaskType, TaskStatus
 from backend.tasks import generate_outline_task, generate_images_task
+from backend.auth import login_required, get_current_user
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 
-def _get_user_id() -> str:
-    """从请求头或查询参数获取用户 ID。
-
-    优先级：
-        1. X-User-Id 请求头（适用于 POST/GET 等常规请求）
-        2. user_id 查询参数（适用于 EventSource SSE 请求，因 EventSource 不支持自定义头）
-
-    Returns:
-        用户 ID 字符串，未提供则返回空字符串
-    """
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        user_id = request.args.get('user_id')
-    return (user_id or '').strip()
-
-
 @api_bp.route('/outline', methods=['POST'])
+@login_required
 def create_outline_task():
     """创建大纲生成任务（异步）。
 
@@ -47,7 +33,8 @@ def create_outline_task():
     前端需轮询 GET /api/outline/<task_id> 获取结果。
     """
     try:
-        user_id = _get_user_id()
+        user = get_current_user()
+        user_id = str(user.id)
         images_base64 = []
 
         # 解析请求体
@@ -106,6 +93,7 @@ def create_outline_task():
 
 
 @api_bp.route('/outline/<task_id>', methods=['GET'])
+@login_required
 def get_outline_task_status(task_id: str):
     """查询大纲生成任务状态。
 
@@ -117,7 +105,8 @@ def get_outline_task_status(task_id: str):
         - 404 Not Found: 任务不存在
     """
     try:
-        user_id = _get_user_id()
+        user = get_current_user()
+        user_id = str(user.id)
         task = TaskStore.get_task(TaskType.OUTLINE, task_id)
 
         if not task:
@@ -168,6 +157,7 @@ def get_outline_task_status(task_id: str):
 
 
 @api_bp.route('/generate', methods=['POST'])
+@login_required
 def create_image_task():
     """创建图片生成任务（异步）。
 
@@ -188,7 +178,8 @@ def create_image_task():
     前端通过 GET /api/generate/stream/<task_id> 订阅 SSE 事件。
     """
     try:
-        user_id = _get_user_id()
+        user = get_current_user()
+        user_id = str(user.id)
         data = request.get_json() or {}
 
         pages = data.get('pages') or []
@@ -249,6 +240,7 @@ def create_image_task():
 
 
 @api_bp.route('/generate/stream/<task_id>', methods=['GET'])
+@login_required
 def stream_image_task(task_id: str):
     """通过 SSE 订阅图片生成任务事件。
 
@@ -259,7 +251,8 @@ def stream_image_task(task_id: str):
     前端使用 EventSource 订阅此接口。
     """
     try:
-        user_id = _get_user_id()
+        user = get_current_user()
+        user_id = str(user.id)
         task = TaskStore.get_task(TaskType.IMAGE, task_id)
 
         if not task:
@@ -324,6 +317,7 @@ def stream_image_task(task_id: str):
 
 
 @api_bp.route('/generate/<task_id>', methods=['GET'])
+@login_required
 def get_image_task_status(task_id: str):
     """查询图片生成任务状态及每页生成情况。
 
@@ -342,7 +336,8 @@ def get_image_task_status(task_id: str):
         }
     """
     try:
-        user_id = _get_user_id()
+        user = get_current_user()
+        user_id = str(user.id)
         task = TaskStore.get_task(TaskType.IMAGE, task_id)
 
         if not task:
@@ -578,9 +573,11 @@ def health_check():
 # ==================== 历史记录相关 API ====================
 
 @api_bp.route('/history', methods=['POST'])
+@login_required
 def create_history():
     """创建历史记录"""
     try:
+        user = get_current_user()
         data = request.get_json()
         topic = data.get('topic')
         outline = data.get('outline')
@@ -593,7 +590,7 @@ def create_history():
             }), 400
 
         history_service = get_history_service()
-        record_id = history_service.create_record(topic, outline, task_id)
+        record_id = history_service.create_record(user.id, topic, outline, task_id)
 
         return jsonify({
             "success": True,
@@ -608,15 +605,17 @@ def create_history():
 
 
 @api_bp.route('/history', methods=['GET'])
+@login_required
 def list_history():
     """获取历史记录列表"""
     try:
+        user = get_current_user()
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 20))
         status = request.args.get('status')
 
         history_service = get_history_service()
-        result = history_service.list_records(page, page_size, status)
+        result = history_service.list_records(user.id, page, page_size, status)
 
         return jsonify({
             "success": True,
@@ -631,11 +630,13 @@ def list_history():
 
 
 @api_bp.route('/history/<record_id>', methods=['GET'])
+@login_required
 def get_history(record_id):
     """获取历史记录详情"""
     try:
+        user = get_current_user()
         history_service = get_history_service()
-        record = history_service.get_record(record_id)
+        record = history_service.get_record(user.id, record_id)
 
         if not record:
             return jsonify({
@@ -656,9 +657,11 @@ def get_history(record_id):
 
 
 @api_bp.route('/history/<record_id>', methods=['PUT'])
+@login_required
 def update_history(record_id):
     """更新历史记录"""
     try:
+        user = get_current_user()
         data = request.get_json()
         outline = data.get('outline')
         images = data.get('images')
@@ -667,6 +670,7 @@ def update_history(record_id):
 
         history_service = get_history_service()
         success = history_service.update_record(
+            user.id,
             record_id,
             outline=outline,
             images=images,
@@ -692,11 +696,13 @@ def update_history(record_id):
 
 
 @api_bp.route('/history/<record_id>', methods=['DELETE'])
+@login_required
 def delete_history(record_id):
     """删除历史记录"""
     try:
+        user = get_current_user()
         history_service = get_history_service()
-        success = history_service.delete_record(record_id)
+        success = history_service.delete_record(user.id, record_id)
 
         if not success:
             return jsonify({
@@ -716,9 +722,11 @@ def delete_history(record_id):
 
 
 @api_bp.route('/history/search', methods=['GET'])
+@login_required
 def search_history():
     """搜索历史记录"""
     try:
+        user = get_current_user()
         keyword = request.args.get('keyword', '')
 
         if not keyword:
@@ -728,7 +736,7 @@ def search_history():
             }), 400
 
         history_service = get_history_service()
-        results = history_service.search_records(keyword)
+        results = history_service.search_records(user.id, keyword)
 
         return jsonify({
             "success": True,
@@ -743,11 +751,13 @@ def search_history():
 
 
 @api_bp.route('/history/stats', methods=['GET'])
+@login_required
 def get_history_stats():
     """获取历史记录统计"""
     try:
+        user = get_current_user()
         history_service = get_history_service()
-        stats = history_service.get_statistics()
+        stats = history_service.get_statistics(user.id)
 
         return jsonify({
             "success": True,

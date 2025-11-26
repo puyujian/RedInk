@@ -1,228 +1,292 @@
-import os
-import json
+"""
+历史记录服务
+
+使用 SQLAlchemy 数据库存储，确保用户数据隔离
+"""
 import uuid
-from datetime import datetime
-from typing import Dict, List, Optional, Any
-from pathlib import Path
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+from sqlalchemy import func
+
+from backend.db import db_session
+from backend.models import HistoryRecord
 
 
 class HistoryService:
+    """历史记录服务（数据库版本）
+
+    所有方法都要求传入 user_id 参数，确保数据隔离
+    """
+
     def __init__(self):
-        self.history_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "history"
-        )
-        os.makedirs(self.history_dir, exist_ok=True)
-
-        self.index_file = os.path.join(self.history_dir, "index.json")
-        self._init_index()
-
-    def _init_index(self):
-        if not os.path.exists(self.index_file):
-            with open(self.index_file, "w", encoding="utf-8") as f:
-                json.dump({"records": []}, f, ensure_ascii=False, indent=2)
-
-    def _load_index(self) -> Dict:
-        try:
-            with open(self.index_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {"records": []}
-
-    def _save_index(self, index: Dict):
-        with open(self.index_file, "w", encoding="utf-8") as f:
-            json.dump(index, f, ensure_ascii=False, indent=2)
-
-    def _get_record_path(self, record_id: str) -> str:
-        return os.path.join(self.history_dir, f"{record_id}.json")
+        """初始化服务（无需文件系统操作）"""
+        pass
 
     def create_record(
         self,
+        user_id: int,
         topic: str,
         outline: Dict,
         task_id: Optional[str] = None
     ) -> str:
-        record_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
+        """创建历史记录
 
-        record = {
-            "id": record_id,
-            "title": topic,
-            "created_at": now,
-            "updated_at": now,
-            "outline": outline,
-            "images": {
-                "task_id": task_id,
-                "generated": []
-            },
-            "status": "draft",  # draft/generating/completed/partial
-            "thumbnail": None
-        }
+        Args:
+            user_id: 用户 ID
+            topic: 主题标题
+            outline: 大纲数据（dict）
+            task_id: 图片生成任务 ID（可选）
 
-        record_path = self._get_record_path(record_id)
-        with open(record_path, "w", encoding="utf-8") as f:
-            json.dump(record, f, ensure_ascii=False, indent=2)
+        Returns:
+            str: 记录 UUID
+        """
+        with db_session() as db:
+            record = HistoryRecord(
+                record_uuid=str(uuid.uuid4()),
+                user_id=user_id,
+                title=topic,
+                outline_json=outline,
+                image_task_id=task_id,
+                status='draft',
+            )
+            db.add(record)
+            db.flush()  # 确保生成 UUID
+            return record.record_uuid
 
-        index = self._load_index()
-        index["records"].insert(0, {
-            "id": record_id,
-            "title": topic,
-            "created_at": now,
-            "updated_at": now,
-            "status": "draft",
-            "thumbnail": None,
-            "page_count": len(outline.get("pages", []))
-        })
-        self._save_index(index)
+    def get_record(self, user_id: int, record_id: str) -> Optional[Dict]:
+        """获取历史记录详情
 
-        return record_id
+        Args:
+            user_id: 用户 ID
+            record_id: 记录 UUID
 
-    def get_record(self, record_id: str) -> Optional[Dict]:
-        record_path = self._get_record_path(record_id)
+        Returns:
+            Optional[Dict]: 记录详情，不存在或无权限返回 None
+        """
+        with db_session() as db:
+            record = db.query(HistoryRecord).filter(
+                HistoryRecord.record_uuid == record_id,
+                HistoryRecord.user_id == user_id
+            ).first()
 
-        if not os.path.exists(record_path):
-            return None
-
-        try:
-            with open(record_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
+            return self._record_to_dict(record) if record else None
 
     def update_record(
         self,
+        user_id: int,
         record_id: str,
         outline: Optional[Dict] = None,
         images: Optional[Dict] = None,
         status: Optional[str] = None,
         thumbnail: Optional[str] = None
     ) -> bool:
-        record = self.get_record(record_id)
-        if not record:
-            return False
+        """更新历史记录
 
-        now = datetime.now().isoformat()
-        record["updated_at"] = now
+        Args:
+            user_id: 用户 ID
+            record_id: 记录 UUID
+            outline: 大纲数据（可选）
+            images: 图片数据（可选）
+            status: 状态（可选）
+            thumbnail: 缩略图 URL（可选）
 
-        if outline is not None:
-            record["outline"] = outline
+        Returns:
+            bool: 是否更新成功
+        """
+        with db_session() as db:
+            record = db.query(HistoryRecord).filter(
+                HistoryRecord.record_uuid == record_id,
+                HistoryRecord.user_id == user_id
+            ).first()
 
-        if images is not None:
-            record["images"] = images
+            if not record:
+                return False
 
-        if status is not None:
-            record["status"] = status
+            # 更新字段
+            if outline is not None:
+                record.outline_json = outline
+            if images is not None:
+                record.images_json = images
+            if status is not None:
+                record.status = status
+            if thumbnail is not None:
+                record.thumbnail_url = thumbnail
 
-        if thumbnail is not None:
-            record["thumbnail"] = thumbnail
+            # 更新时间戳（数据库会自动更新，这里显式设置确保一致性）
+            record.updated_at = datetime.now(timezone.utc)
 
-        record_path = self._get_record_path(record_id)
-        with open(record_path, "w", encoding="utf-8") as f:
-            json.dump(record, f, ensure_ascii=False, indent=2)
+            return True
 
-        index = self._load_index()
-        for idx_record in index["records"]:
-            if idx_record["id"] == record_id:
-                idx_record["updated_at"] = now
-                if status:
-                    idx_record["status"] = status
-                if thumbnail:
-                    idx_record["thumbnail"] = thumbnail
-                if outline:
-                    idx_record["page_count"] = len(outline.get("pages", []))
-                break
+    def delete_record(self, user_id: int, record_id: str) -> bool:
+        """删除历史记录
 
-        self._save_index(index)
-        return True
+        Args:
+            user_id: 用户 ID
+            record_id: 记录 UUID
 
-    def delete_record(self, record_id: str) -> bool:
-        record = self.get_record(record_id)
-        if not record:
-            return False
+        Returns:
+            bool: 是否删除成功
 
-        if record.get("images") and record["images"].get("generated"):
-            output_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "output"
-            )
-            for img_file in record["images"]["generated"]:
-                img_path = os.path.join(output_dir, img_file)
-                if os.path.exists(img_path):
-                    try:
-                        os.remove(img_path)
-                    except Exception as e:
-                        print(f"删除图片失败: {img_file}, {e}")
+        Note:
+            关联的 ImageFile 会通过数据库级联删除
+        """
+        with db_session() as db:
+            record = db.query(HistoryRecord).filter(
+                HistoryRecord.record_uuid == record_id,
+                HistoryRecord.user_id == user_id
+            ).first()
 
-        record_path = self._get_record_path(record_id)
-        try:
-            os.remove(record_path)
-        except Exception:
-            return False
+            if not record:
+                return False
 
-        index = self._load_index()
-        index["records"] = [r for r in index["records"] if r["id"] != record_id]
-        self._save_index(index)
-
-        return True
+            db.delete(record)
+            return True
 
     def list_records(
         self,
+        user_id: int,
         page: int = 1,
         page_size: int = 20,
         status: Optional[str] = None
     ) -> Dict:
-        index = self._load_index()
-        records = index.get("records", [])
+        """获取历史记录列表（分页）
 
-        if status:
-            records = [r for r in records if r.get("status") == status]
+        Args:
+            user_id: 用户 ID
+            page: 页码（从 1 开始）
+            page_size: 每页数量
+            status: 状态过滤（可选）
 
-        total = len(records)
-        start = (page - 1) * page_size
-        end = start + page_size
-        page_records = records[start:end]
+        Returns:
+            Dict: 包含 records, total, page, page_size, total_pages
+        """
+        with db_session() as db:
+            # 构建查询
+            query = db.query(HistoryRecord).filter(
+                HistoryRecord.user_id == user_id
+            )
 
-        return {
-            "records": page_records,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size
+            if status:
+                query = query.filter(HistoryRecord.status == status)
+
+            # 按创建时间倒序
+            query = query.order_by(HistoryRecord.created_at.desc())
+
+            # 计算总数
+            total = query.count()
+
+            # 分页查询
+            records = query.offset((page - 1) * page_size).limit(page_size).all()
+
+            return {
+                'records': [self._record_to_dict(r, summary=True) for r in records],
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total + page_size - 1) // page_size if total > 0 else 0
+            }
+
+    def search_records(self, user_id: int, keyword: str) -> List[Dict]:
+        """搜索历史记录（按标题）
+
+        Args:
+            user_id: 用户 ID
+            keyword: 搜索关键词
+
+        Returns:
+            List[Dict]: 匹配的记录列表
+        """
+        with db_session() as db:
+            records = db.query(HistoryRecord).filter(
+                HistoryRecord.user_id == user_id,
+                HistoryRecord.title.contains(keyword)
+            ).order_by(HistoryRecord.created_at.desc()).all()
+
+            return [self._record_to_dict(r, summary=True) for r in records]
+
+    def get_statistics(self, user_id: int) -> Dict:
+        """获取用户统计信息
+
+        Args:
+            user_id: 用户 ID
+
+        Returns:
+            Dict: 包含 total 和 by_status 统计
+        """
+        with db_session() as db:
+            # 总记录数
+            total = db.query(HistoryRecord).filter(
+                HistoryRecord.user_id == user_id
+            ).count()
+
+            # 按状态分组统计
+            status_counts = db.query(
+                HistoryRecord.status,
+                func.count(HistoryRecord.id)
+            ).filter(
+                HistoryRecord.user_id == user_id
+            ).group_by(HistoryRecord.status).all()
+
+            return {
+                'total': total,
+                'by_status': {status: count for status, count in status_counts}
+            }
+
+    @staticmethod
+    def _record_to_dict(record: HistoryRecord, summary: bool = False) -> Dict:
+        """将 HistoryRecord 模型转换为 dict
+
+        Args:
+            record: HistoryRecord 实例
+            summary: 是否只返回摘要信息（用于列表显示）
+
+        Returns:
+            Dict: 记录数据
+        """
+        if not record:
+            return {}
+
+        # 基础信息
+        data = {
+            'id': record.record_uuid,
+            'title': record.title,
+            'created_at': record.created_at.isoformat() if record.created_at else None,
+            'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+            'status': record.status,
+            'thumbnail': record.thumbnail_url,
         }
 
-    def search_records(self, keyword: str) -> List[Dict]:
-        index = self._load_index()
-        records = index.get("records", [])
+        if summary:
+            # 列表显示：仅包含基础信息和页数
+            data['page_count'] = (
+                len(record.outline_json.get('pages', []))
+                if record.outline_json else 0
+            )
+        else:
+            # 详情显示：包含完整数据
+            data['outline'] = record.outline_json
+            data['images'] = record.images_json or {
+                'task_id': record.image_task_id,
+                'generated': []
+            }
+            data['page_count'] = (
+                len(record.outline_json.get('pages', []))
+                if record.outline_json else 0
+            )
 
-        keyword_lower = keyword.lower()
-        results = [
-            r for r in records
-            if keyword_lower in r.get("title", "").lower()
-        ]
-
-        return results
-
-    def get_statistics(self) -> Dict:
-        index = self._load_index()
-        records = index.get("records", [])
-
-        total = len(records)
-        status_count = {}
-
-        for record in records:
-            status = record.get("status", "draft")
-            status_count[status] = status_count.get(status, 0) + 1
-
-        return {
-            "total": total,
-            "by_status": status_count
-        }
+        return data
 
 
+# 单例模式
 _service_instance = None
 
 
 def get_history_service() -> HistoryService:
+    """获取 HistoryService 单例
+
+    Returns:
+        HistoryService: 服务实例
+    """
     global _service_instance
     if _service_instance is None:
         _service_instance = HistoryService()

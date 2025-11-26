@@ -10,6 +10,22 @@
       <div class="showcase-overlay"></div>
     </div>
 
+    <!-- 登录提示横幅 -->
+    <div v-if="showLoginHint && !authStore.isAuthenticated" class="login-hint-banner">
+      <div class="hint-content">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span>登录后可保存创作历史，随时查看和管理您的作品</span>
+      </div>
+      <div class="hint-actions">
+        <button class="btn-hint-action" @click="router.push({ path: '/', query: { showAuth: 'login' } })">立即登录</button>
+        <button class="btn-hint-close" @click="showLoginHint = false">×</button>
+      </div>
+    </div>
+
     <!-- Hero Area -->
     <div class="hero-section">
       <div class="hero-content">
@@ -191,16 +207,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { useGeneratorStore } from '../stores/generator'
 import { generateOutline, getHistoryList, getHistory } from '../api'
 
 const router = useRouter()
+const route = useRoute()
+const authStore = useAuthStore()
 const store = useGeneratorStore()
 
 const topic = ref('')
 const loading = ref(false)
 const error = ref('')
+const showLoginHint = ref(false)
 const recentRecords = ref<any[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const isExpanded = ref(false)
@@ -328,6 +348,13 @@ const loadRecord = async (record: any) => {
 const handleGenerate = async () => {
   if (!topic.value.trim()) return
 
+  // 检查登录状态
+  if (!authStore.isAuthenticated) {
+    showLoginHint.value = true
+    error.value = '请先登录后继续创作，登录后可保存历史记录'
+    return
+  }
+
   loading.value = true
   error.value = ''
 
@@ -368,6 +395,12 @@ const handleGenerate = async () => {
 }
 
 onMounted(() => {
+  // 检查是否因未登录被重定向
+  if (route.query.login_required === '1') {
+    showLoginHint.value = true
+    error.value = '请先登录后继续创作'
+  }
+
   loadRecent()
   loadShowcaseImages()
 })
@@ -435,6 +468,86 @@ onUnmounted(() => {
   padding-top: 10px;
   position: relative;
   z-index: 1;
+}
+
+/* 登录提示横幅 */
+.login-hint-banner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 24px;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  animation: slideDown 0.4s ease-out;
+}
+
+.hint-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.hint-content svg {
+  flex-shrink: 0;
+}
+
+.hint-content span {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.hint-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-hint-action {
+  background: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-hint-action:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-hint-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.btn-hint-close:hover {
+  opacity: 1;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Section Headers */
