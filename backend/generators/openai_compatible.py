@@ -344,8 +344,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
                                 logger.debug(f"SSE接收内容片段: {content[:50]}")
 
                     except json.JSONDecodeError:
-                        # 如果不是JSON，可能是纯文本格式
-                        logger.warning(f"SSE数据非JSON格式: {data_str[:100]}")
+                        # 如果不是JSON，可能是纯文本格式（如模型的思考过程）
+                        logger.debug(f"SSE数据非JSON格式: {data_str[:100]}")
                         accumulated_content.append(data_str)
 
         except Exception as e:
