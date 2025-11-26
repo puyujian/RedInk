@@ -153,15 +153,25 @@ def load_current_user() -> Optional[User]:
 
     优先级：
     1. Authorization 头中的 JWT token
-    2. X-User-Id 头中的匿名 UUID（向后兼容）
+    2. URL query parameter 中的 access_token（用于 SSE 等无法发送自定义 header 的场景）
+    3. X-User-Id 头中的匿名 UUID（向后兼容）
 
     Returns:
         Optional[User]: 当前用户对象，未登录返回 None
     """
+    token = None
+
     # 尝试从 Authorization 头获取 JWT token
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
+
+    # 如果 header 中没有 token，尝试从 URL query parameter 获取（用于 SSE 请求）
+    if not token:
+        token = request.args.get('access_token', '').strip()
+
+    # 如果找到了 token，验证并加载用户
+    if token:
         payload = decode_token(token)
 
         if payload and payload.get('type') == 'access':

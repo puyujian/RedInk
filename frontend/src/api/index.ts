@@ -326,7 +326,19 @@ export function subscribeImageTask(
   onStreamError: (error: Error) => void
 ): EventSource {
   const userId = getUserId()
-  const url = `${API_BASE_URL}/generate/stream/${taskId}?user_id=${encodeURIComponent(userId)}`
+
+  // 构建 URL，添加必要的参数
+  const params = new URLSearchParams({
+    user_id: userId
+  })
+
+  // 如果用户已登录，添加 access_token 参数（SSE 无法发送自定义 headers）
+  const token = getStoredAccessToken()
+  if (token) {
+    params.append('access_token', token)
+  }
+
+  const url = `${API_BASE_URL}/generate/stream/${taskId}?${params.toString()}`
   const eventSource = new EventSource(url)
 
   eventSource.addEventListener('progress', (e: MessageEvent) => {
@@ -369,9 +381,30 @@ export function subscribeImageTask(
     }
   })
 
-  eventSource.onerror = () => {
-    // Connection error
-    onStreamError(new Error('SSE 连接错误'))
+  eventSource.onerror = (event: Event) => {
+    // 根据 readyState 判断错误类型
+    let errorMessage = 'SSE 连接错误'
+
+    if (eventSource.readyState === EventSource.CONNECTING) {
+      // 正在重连
+      errorMessage = '正在尝试重新连接...'
+      console.warn('SSE 连接断开，正在重连...')
+      return // 让 EventSource 自动重连
+    } else if (eventSource.readyState === EventSource.CLOSED) {
+      // 连接已关闭（通常是因为认证失败、404 等）
+      errorMessage = 'SSE 连接失败。可能原因：\n' +
+        '1. 认证失败，请尝试重新登录\n' +
+        '2. 任务不存在或已过期\n' +
+        '3. 网络连接问题\n' +
+        '请刷新页面后重试'
+    }
+
+    console.error('SSE 连接错误:', {
+      readyState: eventSource.readyState,
+      event
+    })
+
+    onStreamError(new Error(errorMessage))
     eventSource.close()
   }
 
