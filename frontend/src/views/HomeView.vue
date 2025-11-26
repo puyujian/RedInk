@@ -206,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGeneratorStore } from '../stores/generator'
@@ -224,6 +224,20 @@ const showLoginHint = ref(false)
 const recentRecords = ref<any[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const isExpanded = ref(false)
+
+// 监听登录状态变化，自动刷新最近创作
+watch(() => authStore.isAuthenticated, (newValue) => {
+  if (newValue) {
+    showLoginHint.value = false
+    error.value = ''
+    loadRecent()
+  } else {
+    // 退出登录时清空最近记录，或者重新加载（如果是显示公开记录的话）
+    // 这里假设退出登录后不显示个人的最近创作
+    recentRecords.value = []
+    loadRecent() // 尝试加载，后端可能返回空或公开数据
+  }
+})
 
 // 图片网格轮播相关
 const showcaseImages = ref<string[]>([])
