@@ -254,3 +254,55 @@
   font-size: 24px;
   cursor: pointer;
 }
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  .card {
+    padding: 24px 20px;
+    margin-bottom: 20px;
+  }
+  
+  .btn {
+    min-height: var(--touch-target-size);
+    font-size: 15px;
+  }
+  
+  .grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  /* On very small screens, 1 col. On slightly larger mobile, maybe 2 cols for grid-cols-4? */
+  .grid-cols-4 {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+  }
+  
+  .input {
+    padding: 16px 24px; /* Slightly more compact vertically but still large target */
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+
+  .modal-fullscreen {
+    padding: 0;
+  }
+  
+  .modal-body {
+    height: 100vh;
+    border-radius: 0;
+    max-width: 100%;
+  }
+
+  .tabs-container {
+    overflow-x: auto;
+    white-space: nowrap;
+    margin-right: -20px; /* Bleed to edge (matches card padding) */
+    padding-right: 20px;
+    -webkit-overflow-scrolling: touch;
+    gap: 20px;
+  }
+  
+  .tabs-container::-webkit-scrollbar {
+    display: none;
+  }
+}
