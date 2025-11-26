@@ -15,6 +15,8 @@ SimpleWorker 在主进程中同步执行任务，适用于开发环境和 Window
 from __future__ import annotations
 
 import logging
+import platform
+import signal
 import sys
 from pathlib import Path
 
@@ -34,9 +36,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 全局停止标志
+_shutdown_requested = False
+
+
+def _signal_handler(signum: int, frame) -> None:
+    """处理中断信号，设置停止标志。"""
+    global _shutdown_requested
+    _shutdown_requested = True
+    logger.info(f"\n⏹ 收到停止信号 ({signal.Signals(signum).name})，正在优雅关闭...")
+    # 在 Windows 上，直接退出是最可靠的方式
+    sys.exit(0)
+
+
+def _setup_windows_signal_handlers() -> None:
+    """设置 Windows 专用的信号处理器。"""
+    # SIGINT: Ctrl+C
+    signal.signal(signal.SIGINT, _signal_handler)
+    # SIGBREAK: Ctrl+Break (Windows 专用，更可靠)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _signal_handler)
+    # SIGTERM: 终止信号
+    signal.signal(signal.SIGTERM, _signal_handler)
+
 
 def main() -> None:
     """启动 RQ Worker。"""
+    # Windows 平台：提前设置信号处理器
+    if platform.system() == "Windows":
+        _setup_windows_signal_handlers()
+
     try:
         # 测试 Redis 连接
         redis_conn = get_redis_connection()
@@ -49,7 +78,6 @@ def main() -> None:
         logger.info(f"✓ 队列已加载: {outline_queue.name}, {image_queue.name}")
 
         # 根据平台选择 Worker 类型
-        import platform
         if platform.system() == "Windows":
             from rq.worker import SimpleWorker as WorkerClass
             logger.info("⚠ Windows 平台检测到，使用 SimpleWorker（同步模式）")
@@ -68,15 +96,18 @@ def main() -> None:
         logger.info("🚀 RQ Worker 已启动")
         logger.info(f"   监听队列: {[q.name for q in worker.queues]}")
         logger.info(f"   Worker 类型: {WorkerClass.__name__}")
-        logger.info(f"   按 Ctrl+C 停止")
+        logger.info("   停止方式: Ctrl+C 或 Ctrl+Break (Windows)")
         logger.info("=" * 60)
 
         # 启动 Worker（阻塞）
         worker.work(with_scheduler=False)
 
     except KeyboardInterrupt:
-        logger.info("\n⏹ Worker 已停止")
+        logger.info("\n⏹ Worker 已停止 (KeyboardInterrupt)")
         sys.exit(0)
+    except SystemExit:
+        logger.info("⏹ Worker 已停止")
+        raise
     except Exception as e:
         logger.error(f"❌ Worker 启动失败: {e}", exc_info=True)
         sys.exit(1)
