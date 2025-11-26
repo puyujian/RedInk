@@ -79,6 +79,25 @@ providers:
       - "1024x1024"
     max_retries: 3
 
+  # Nano-Banana-Pro（支持流式响应）
+  nano_banana:
+    type: openai_compatible
+    api_key_env: NANO_BANANA_API_KEY
+    base_url: https://your-nano-banana-endpoint.com
+    model: Nano-Banana-Pro
+    endpoint_type: chat  # 使用 chat 端点
+    default_size: "1024x1024"
+    supported_sizes:
+      - "1024x1024"
+      - "1024x1792"
+      - "1792x1024"
+    max_retries: 5
+    # 流式响应配置（推荐启用以避免超时）
+    chat_streaming: true  # 启用流式响应，默认为 true
+    chat_stream_connect_timeout: 30  # 流式连接超时时间（秒），默认 30
+    chat_stream_read_timeout: 600  # 流式读取超时时间（秒），默认为 request_timeout * 2
+    chat_request_timeout: 180  # 非流式请求超时时间（秒），默认 180
+
 # 小红书图片配置
 xiaohongshu:
   # 默认宽高比 (用于Google GenAI)

@@ -3,6 +3,7 @@ import time
 import random
 import base64
 import re
+import json
 import logging
 from functools import wraps
 from typing import Dict, Any, List, Optional
@@ -264,37 +265,168 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         else:
             raise ValueError("未找到图片数据")
 
-    def _generate_via_chat_api(
-        self,
-        prompt: str,
-        size: str,
-        model: str,
-        image_index: Optional[int] = None
-    ) -> bytes:
+    def _extract_text_from_delta(self, delta: Dict[str, Any]) -> Optional[str]:
         """
-        通过 /v1/chat/completions 端点生成图片
-
-        某些服务商（如Nano-Banana-Pro）使用chat接口返回图片，
-        支持以下返回格式：
-        1. base64 data URL: data:image/png;base64,...
-        2. Markdown图片链接: ![alt](url)（可能返回多张图片）
+        从 delta 对象中提取文本内容
 
         Args:
-            prompt: 提示词
-            size: 图片尺寸
-            model: 模型名称
-            image_index: 指定返回第几张图片（None表示使用配置的默认值）
+            delta: delta 对象
 
         Returns:
-            图片二进制数据
-
-        Raises:
-            ValueError: 响应格式不符合预期或无法提取图片数据
-            Exception: API请求失败或图片下载失败
+            文本内容（如果有）
         """
-        # 在发送请求前对提示词进行长度检查和预处理
-        safe_prompt = self._prepare_chat_prompt(prompt)
+        if not isinstance(delta, dict):
+            return None
 
+        content = delta.get("content")
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+                    elif "text" in item:
+                        text_parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    text_parts.append(item)
+            if text_parts:
+                return "".join(text_parts)
+
+        text_value = delta.get("text")
+        if isinstance(text_value, str):
+            return text_value
+
+        return None
+
+    def _decode_stream_chunk(self, data_str: str) -> Optional[str]:
+        """
+        解码流式响应中的单个数据块
+
+        Args:
+            data_str: 可能为 JSON 或纯文本的数据字符串
+
+        Returns:
+            提取的文本内容（如果有）
+        """
+        if not data_str:
+            return None
+
+        try:
+            chunk = json.loads(data_str)
+        except json.JSONDecodeError:
+            # 返回纯文本内容（例如装饰性提示）
+            return data_str
+
+        fragments: List[str] = []
+
+        choices = chunk.get("choices")
+        if isinstance(choices, list) and choices:
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+
+                delta = choice.get("delta") or {}
+                delta_text = self._extract_text_from_delta(delta)
+                if delta_text:
+                    fragments.append(delta_text)
+
+                message = choice.get("message")
+                if message:
+                    try:
+                        fragments.append(self._extract_content_from_message(message))
+                    except ValueError:
+                        pass
+
+                choice_content = choice.get("content")
+                if isinstance(choice_content, str):
+                    fragments.append(choice_content)
+        else:
+            message = chunk.get("message")
+            if message:
+                try:
+                    fragments.append(self._extract_content_from_message(message))
+                except ValueError:
+                    pass
+
+            chunk_content = chunk.get("content")
+            if isinstance(chunk_content, str):
+                fragments.append(chunk_content)
+
+        combined = "".join(fragments).strip()
+        return combined or None
+
+    def _parse_streaming_response(self, response: requests.Response) -> str:
+        """解析 SSE/流式响应，提取文本内容"""
+        content_fragments: List[str] = []
+
+        try:
+            for raw_line in response.iter_lines(decode_unicode=True, chunk_size=8192):
+                if raw_line is None:
+                    continue
+
+                line = raw_line.strip()
+                if not line or line.startswith(":"):
+                    continue
+
+                if line.startswith("data:"):
+                    data_str = line[5:].strip()
+                else:
+                    data_str = line
+
+                if not data_str:
+                    continue
+
+                if data_str.upper() == "[DONE]":
+                    break
+
+                chunk_text = self._decode_stream_chunk(data_str)
+                if chunk_text:
+                    content_fragments.append(chunk_text)
+        finally:
+            response.close()
+
+        aggregated_content = "".join(content_fragments).strip()
+
+        if not aggregated_content:
+            raise ValueError("流式响应中未找到可用内容")
+
+        return aggregated_content
+
+    def _request_chat_completion_content(
+        self,
+        safe_prompt: str,
+        size: str,
+        model: str
+    ) -> str:
+        """根据配置自动选择流式/非流式模式请求 chat 接口"""
+        use_streaming = self.config.get("chat_streaming", True)
+
+        if use_streaming:
+            try:
+                return self._send_chat_completion_request(
+                    safe_prompt, size, model, stream=True
+                )
+            except ValueError as stream_error:
+                logger.warning(
+                    "流式响应解析失败，自动回退到非流式模式: %s",
+                    stream_error
+                )
+
+        return self._send_chat_completion_request(
+            safe_prompt, size, model, stream=False
+        )
+
+    def _send_chat_completion_request(
+        self,
+        safe_prompt: str,
+        size: str,
+        model: str,
+        *,
+        stream: bool
+    ) -> str:
         url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
 
         headers = {
@@ -314,18 +446,45 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             "size": size
         }
 
-        logger.info(f"Chat API 请求 payload: model={model}, size={size}")
+        request_timeout = self.config.get(
+            "chat_request_timeout",
+            DEFAULT_REQUEST_TIMEOUT
+        )
+
+        timeout = (
+            self.config.get("chat_stream_connect_timeout", 30),
+            self.config.get(
+                "chat_stream_read_timeout",
+                max(request_timeout, DEFAULT_REQUEST_TIMEOUT) * 2
+            )
+        ) if stream else request_timeout
+
+        if stream:
+            payload["stream"] = True
+
+        logger.info(
+            "Chat API 请求 payload: model=%s, size=%s, stream=%s",
+            model,
+            size,
+            stream
+        )
 
         response = requests.post(
-            url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
+            url,
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+            stream=stream
         )
 
         if response.status_code != 200:
             raise Exception(f"API请求失败: {response.status_code} - {response.text}")
 
+        if stream:
+            return self._parse_streaming_response(response)
+
         result = response.json()
 
-        # 验证响应结构
         if "choices" not in result or len(result["choices"]) == 0:
             raise ValueError("chat API 响应缺少 choices 字段或为空")
 
@@ -334,7 +493,48 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             raise ValueError("chat API 响应缺少 message 字段")
 
         message = choice["message"]
-        content = self._extract_content_from_message(message)
+        return self._extract_content_from_message(message)
+
+    def _generate_via_chat_api(
+        self,
+        prompt: str,
+        size: str,
+        model: str,
+        image_index: Optional[int] = None
+    ) -> bytes:
+        """
+        通过 /v1/chat/completions 端点生成图片
+
+        某些服务商（如Nano-Banana-Pro）使用chat接口返回图片，
+        支持以下返回格式：
+        1. base64 data URL: data:image/png;base64,...
+        2. Markdown图片链接: ![alt](url)（可能返回多张图片）
+        
+        支持流式响应以避免超时：
+        当接口端启用流式输出时，会在生成过程中持续发送装饰性消息（emoji + 提示文字），
+        最终返回图片 URL（格式为 ![Generated Image](图片URL)）
+
+        Args:
+            prompt: 提示词
+            size: 图片尺寸
+            model: 模型名称
+            image_index: 指定返回第几张图片（None表示使用配置的默认值）
+
+        Returns:
+            图片二进制数据
+
+        Raises:
+            ValueError: 响应格式不符合预期或无法提取图片数据
+            Exception: API请求失败或图片下载失败
+        """
+        # 在发送请求前对提示词进行长度检查和预处理
+        safe_prompt = self._prepare_chat_prompt(prompt)
+
+        content = self._request_chat_completion_content(
+            safe_prompt=safe_prompt,
+            size=size,
+            model=model
+        )
 
         # 优先检查是否为明显的错误提示（如长度限制错误）
         self._raise_if_chat_content_is_error(content, prompt)
@@ -383,46 +583,11 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         # 在发送请求前对提示词进行长度检查和预处理
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
-            "temperature": 1.0,
-            "size": size
-        }
-
-        logger.info(f"Chat API 请求 payload: model={model}, size={size}")
-
-        response = requests.post(
-            url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
+        content = self._request_chat_completion_content(
+            safe_prompt=safe_prompt,
+            size=size,
+            model=model
         )
-
-        if response.status_code != 200:
-            raise Exception(f"API请求失败: {response.status_code} - {response.text}")
-
-        result = response.json()
-
-        # 验证响应结构
-        if "choices" not in result or len(result["choices"]) == 0:
-            raise ValueError("chat API 响应缺少 choices 字段或为空")
-
-        choice = result["choices"][0]
-        if "message" not in choice:
-            raise ValueError("chat API 响应缺少 message 字段")
-
-        message = choice["message"]
-        content = self._extract_content_from_message(message)
 
         # 优先检查是否为明显的错误提示
         self._raise_if_chat_content_is_error(content, prompt)
