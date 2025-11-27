@@ -28,6 +28,9 @@ class Config:
     OUTLINE_TASK_TIMEOUT = int(os.getenv('OUTLINE_TASK_TIMEOUT', 300))  # 大纲生成超时 5 分钟
     IMAGE_TASK_TIMEOUT = int(os.getenv('IMAGE_TASK_TIMEOUT', 1800))  # 图片生成超时 30 分钟
 
+    # Worker 并发配置
+    WORKER_CONCURRENCY = int(os.getenv('WORKER_CONCURRENCY', 8))  # 并发 Worker 进程数
+
     # JWT 认证配置
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'CHANGE_ME_IN_PRODUCTION_PLEASE')
     JWT_ACCESS_EXPIRES = int(os.getenv('JWT_ACCESS_EXPIRES', 900))  # access token 有效期 15 分钟
