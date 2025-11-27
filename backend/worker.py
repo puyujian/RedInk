@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import multiprocessing
 import os
@@ -25,7 +26,7 @@ import sys
 import time
 from multiprocessing.connection import wait as mp_wait
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 # 确保项目根目录在 sys.path 中
 project_root = Path(__file__).parent.parent
@@ -57,6 +58,227 @@ _worker_processes: List[multiprocessing.Process] = []
 
 # 重启节流配置，避免异常重启风暴
 _RESTART_BACKOFF_SECONDS = 5
+
+# RQ Worker 心跳 TTL（秒），用于判断 worker 是否失效
+_DEFAULT_WORKER_TTL = int(os.getenv("RQ_WORKER_TTL", "420"))
+
+
+def _pid_alive(pid: int) -> bool:
+    """检查本机 PID 是否仍然存活。
+
+    Args:
+        pid: 进程 ID
+
+    Returns:
+        True 如果进程存活，False 如果进程不存在或已退出
+    """
+    if pid <= 0:
+        return False
+    try:
+        # os.kill(pid, 0) 不会真正发送信号，只检查进程是否存在
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _cleanup_stale_worker(
+    redis_conn,
+    worker_name: str,
+    worker_ttl: int = _DEFAULT_WORKER_TTL,
+    process_logger: Optional[logging.Logger] = None,
+) -> bool:
+    """清理 Redis 中残留的同名僵尸 worker 注册信息。
+
+    在 worker.register_birth() 前调用，避免因残留注册导致启动失败。
+    使用 Redis 分布式锁防止并发清理冲突。
+
+    清理条件（满足任一）：
+    1. 心跳 key 已不存在（TTL 过期自动删除），但集合中仍有残留
+    2. 心跳 key 存在但对应 PID 已不存活（进程异常退出）
+    3. 心跳时间戳超过 worker_ttl（心跳长时间未更新）
+
+    Args:
+        redis_conn: Redis 连接对象
+        worker_name: Worker 名称
+        worker_ttl: Worker 心跳超时时间（秒）
+        process_logger: 日志记录器（可选）
+
+    Returns:
+        True 如果执行了清理，False 如果无需清理或未获取锁
+    """
+    log = process_logger or logger
+    lock_key = f"lock:rq-worker-clean:{worker_name}"
+    lock = redis_conn.lock(lock_key, timeout=10, blocking_timeout=0)
+
+    if not lock.acquire(blocking=False):
+        log.debug(f"未获取清理锁，跳过清理: {worker_name}")
+        return False
+
+    try:
+        worker_key = f"rq:worker:{worker_name}"
+        workers_set = "rq:workers"
+
+        # 检查 worker 是否在集合中注册
+        if not redis_conn.sismember(workers_set, worker_name):
+            return False  # 未注册，无需清理
+
+        # 情况1：心跳 key 已不存在（TTL=-2 表示 key 不存在）
+        ttl = redis_conn.ttl(worker_key)
+        if ttl == -2:
+            redis_conn.srem(workers_set, worker_name)
+            log.info(f"🧹 已清理残留 worker（心跳 key 已过期）: {worker_name}")
+            return True
+
+        # 获取 worker 的 PID 和心跳信息
+        worker_data = redis_conn.hgetall(worker_key)
+        if not worker_data:
+            redis_conn.srem(workers_set, worker_name)
+            log.info(f"🧹 已清理残留 worker（无心跳数据）: {worker_name}")
+            return True
+
+        # 情况2：PID 已不存活（最可靠的判断）
+        pid_str = worker_data.get(b"pid") or worker_data.get("pid")
+        if pid_str:
+            try:
+                pid = int(pid_str)
+                if not _pid_alive(pid):
+                    redis_conn.delete(worker_key)
+                    redis_conn.srem(workers_set, worker_name)
+                    log.info(f"🧹 已清理残留 worker（PID {pid} 已退出）: {worker_name}")
+                    return True
+            except (ValueError, TypeError):
+                pass  # PID 解析失败，继续检查心跳
+
+        # 情况3：心跳超时（兜底检查）
+        # RQ 心跳可能是 float 时间戳或 UTC 字符串格式
+        last_heartbeat = worker_data.get(b"last_heartbeat") or worker_data.get("last_heartbeat")
+        if last_heartbeat:
+            heartbeat_time: Optional[float] = None
+            try:
+                # 尝试解析为 float 时间戳
+                if isinstance(last_heartbeat, bytes):
+                    last_heartbeat = last_heartbeat.decode("utf-8")
+                heartbeat_time = float(last_heartbeat)
+            except (ValueError, TypeError):
+                # 尝试解析 UTC 字符串格式（如 "2024-01-01 12:00:00.123456"）
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(str(last_heartbeat).replace(" ", "T"))
+                    heartbeat_time = dt.timestamp()
+                except Exception:
+                    pass  # 解析失败，跳过心跳检查
+
+            if heartbeat_time is not None and time.time() - heartbeat_time > worker_ttl:
+                redis_conn.delete(worker_key)
+                redis_conn.srem(workers_set, worker_name)
+                log.info(f"🧹 已清理残留 worker（心跳超时）: {worker_name}")
+                return True
+
+        # 情况4：TTL 为永久（-1）但无法确定存活状态，保守不清理
+        # 这种情况很少见，通常 PID 检查已经覆盖
+
+        return False
+
+    finally:
+        with contextlib.suppress(Exception):
+            lock.release()
+
+
+def _force_cleanup_worker(
+    redis_conn,
+    worker_name: str,
+    process_logger: Optional[logging.Logger] = None,
+) -> bool:
+    """强制清理 worker 注册（不检查存活状态）。
+
+    用于启动时清理当前主机的所有旧注册。如果对应 PID 仍存活，
+    会先尝试终止该进程。
+
+    Args:
+        redis_conn: Redis 连接对象
+        worker_name: Worker 名称
+        process_logger: 日志记录器（可选）
+
+    Returns:
+        True 如果执行了清理
+    """
+    log = process_logger or logger
+    worker_key = f"rq:worker:{worker_name}"
+    workers_set = "rq:workers"
+
+    # 检查是否注册
+    if not redis_conn.sismember(workers_set, worker_name):
+        # 也检查孤立的 worker key
+        if not redis_conn.exists(worker_key):
+            return False
+
+    # 尝试获取并终止残留进程
+    worker_data = redis_conn.hgetall(worker_key)
+    if worker_data:
+        pid_str = worker_data.get(b"pid") or worker_data.get("pid")
+        if pid_str:
+            try:
+                pid = int(pid_str)
+                if _pid_alive(pid):
+                    log.info(f"🔪 正在终止残留进程 PID {pid}: {worker_name}")
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        # 给进程一点时间优雅退出
+                        time.sleep(0.1)
+                        if _pid_alive(pid):
+                            os.kill(pid, signal.SIGKILL)
+                    except OSError:
+                        pass  # 进程可能已退出
+            except (ValueError, TypeError):
+                pass
+
+    # 强制删除 Redis 注册
+    redis_conn.delete(worker_key)
+    redis_conn.srem(workers_set, worker_name)
+    log.info(f"🧹 已强制清理 worker 注册: {worker_name}")
+    return True
+
+
+def _cleanup_all_stale_workers_for_host(redis_conn, force: bool = False) -> int:
+    """清理当前主机所有残留的僵尸 worker。
+
+    在主进程启动时调用，批量清理当前主机名前缀的所有历史 worker。
+
+    Args:
+        redis_conn: Redis 连接对象
+        force: 是否强制清理（True=不检查存活状态直接清理并终止进程）
+
+    Returns:
+        清理的 worker 数量
+    """
+    host_prefix = f"worker-{platform.node()}-"
+    workers_set = "rq:workers"
+    cleaned_count = 0
+
+    try:
+        # 获取所有注册的 worker
+        all_workers = redis_conn.smembers(workers_set)
+        for worker_name_bytes in all_workers:
+            worker_name = (
+                worker_name_bytes.decode("utf-8")
+                if isinstance(worker_name_bytes, bytes)
+                else worker_name_bytes
+            )
+
+            # 只清理当前主机的 worker
+            if worker_name.startswith(host_prefix):
+                if force:
+                    if _force_cleanup_worker(redis_conn, worker_name):
+                        cleaned_count += 1
+                else:
+                    if _cleanup_stale_worker(redis_conn, worker_name):
+                        cleaned_count += 1
+
+    except Exception as e:
+        logger.warning(f"⚠ 批量清理残留 worker 时出错: {e}")
+
+    return cleaned_count
 
 
 def _setup_child_logging(worker_id: int) -> logging.Logger:
@@ -126,6 +348,13 @@ def _run_single_worker(worker_id: int) -> None:
             from rq.worker import SimpleWorker as WorkerClass
         else:
             from rq import Worker as WorkerClass
+
+        # 子进程级别强制清理：确保同名 worker 注册不存在（双重保护）
+        _force_cleanup_worker(
+            redis_conn,
+            worker_name,
+            process_logger=process_logger,
+        )
 
         worker = WorkerClass(
             queues=[outline_queue, image_queue],
@@ -250,6 +479,11 @@ def main() -> None:
         redis_conn = get_redis_connection()
         redis_conn.ping()
         logger.info("✓ Redis 连接成功")
+
+        # 强制清理当前主机残留的 worker 注册（终止残留进程并删除注册）
+        cleaned_count = _cleanup_all_stale_workers_for_host(redis_conn, force=True)
+        if cleaned_count > 0:
+            logger.info(f"✓ 已清理 {cleaned_count} 个残留 worker 注册")
 
         # 获取并发配置（带防御性校验）
         concurrency = _resolve_concurrency()
