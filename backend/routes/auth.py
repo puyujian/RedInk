@@ -136,8 +136,10 @@ def register():
                         'error': '邮箱已被使用'
                     }), 400
 
-            # 确定用户角色
-            default_role = reg_setting.default_role if reg_setting else 'user'
+            # 确定用户角色（安全检查：只允许 user/pro，防止数据库被篡改为 admin）
+            default_role = 'user'  # 安全默认值
+            if reg_setting and reg_setting.default_role in ('user', 'pro'):
+                default_role = reg_setting.default_role
 
             # 创建用户
             user = User(

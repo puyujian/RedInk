@@ -157,6 +157,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import yaml from 'js-yaml'
 import {
   getImageProvidersConfig,
   updateImageProvidersConfig,
@@ -191,8 +192,8 @@ async function fetchConfig() {
   error.value = ''
   try {
     const response = await getImageProvidersConfig()
-    if (response.success && response.config) {
-      configContent.value = response.config.content || ''
+    if (response.success && response.data) {
+      configContent.value = response.data.content || ''
       originalContent.value = configContent.value
     } else {
       error.value = response.error || '获取配置失败'
@@ -207,51 +208,42 @@ async function fetchConfig() {
 function validateYaml(): boolean {
   syntaxError.value = ''
   try {
-    // 基础 YAML 语法检查（简单验证缩进和结构）
-    const lines = configContent.value.split('\n')
-    let prevIndent = 0
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      if (line.trim() === '' || line.trim().startsWith('#')) continue
-
-      const indent = line.search(/\S/)
-      if (indent > 0 && indent % 2 !== 0) {
-        syntaxError.value = `第 ${i + 1} 行: 缩进应为 2 的倍数`
-        return false
-      }
-      if (indent > prevIndent + 2) {
-        syntaxError.value = `第 ${i + 1} 行: 缩进增加过多`
-        return false
-      }
-      prevIndent = indent
-    }
+    // 使用 js-yaml 进行专业的 YAML 语法验证
+    yaml.load(configContent.value)
     return true
-  } catch {
-    syntaxError.value = 'YAML 语法错误'
+  } catch (e: unknown) {
+    if (e instanceof yaml.YAMLException) {
+      // 提取更友好的错误信息
+      const line = e.mark?.line !== undefined ? e.mark.line + 1 : '?'
+      syntaxError.value = `第 ${line} 行: ${e.reason || 'YAML 语法错误'}`
+    } else {
+      syntaxError.value = 'YAML 语法错误'
+    }
     return false
   }
 }
 
 function formatYaml() {
-  // 简单格式化：移除多余空行，统一缩进
-  const lines = configContent.value.split('\n')
-  const formatted: string[] = []
-  let prevEmpty = false
-
-  for (const line of lines) {
-    const trimmed = line.trimEnd()
-    if (trimmed === '') {
-      if (!prevEmpty) {
-        formatted.push('')
-        prevEmpty = true
-      }
+  // 使用 js-yaml 进行专业的格式化
+  try {
+    const parsed = yaml.load(configContent.value)
+    if (parsed) {
+      configContent.value = yaml.dump(parsed, {
+        indent: 2,
+        lineWidth: -1, // 不自动换行
+        noRefs: true,
+        sortKeys: false,
+      })
+    }
+    syntaxError.value = ''
+  } catch (e: unknown) {
+    if (e instanceof yaml.YAMLException) {
+      const line = e.mark?.line !== undefined ? e.mark.line + 1 : '?'
+      syntaxError.value = `第 ${line} 行: ${e.reason || 'YAML 语法错误，无法格式化'}`
     } else {
-      formatted.push(trimmed)
-      prevEmpty = false
+      syntaxError.value = '格式化失败：YAML 语法错误'
     }
   }
-
-  configContent.value = formatted.join('\n').trim() + '\n'
 }
 
 async function saveConfig() {

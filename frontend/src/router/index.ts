@@ -97,8 +97,9 @@ const authRequiredRoutes = ['outline', 'generate', 'result', 'history']
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
-  // 首次加载时初始化认证状态
-  if (!authStore.initializing && !authStore.isAuthenticated && !authStore.user) {
+  // 确保认证状态已初始化（只在首次加载时执行）
+  // 修复：无条件等待初始化完成，避免时序问题
+  if (!authStore._initialized) {
     await authStore.initAuth()
   }
 

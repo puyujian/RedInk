@@ -45,6 +45,17 @@ class Config:
         'Content-Type,Authorization,X-User-Id'
     ).split(',')
 
+    # ============================================================================
+    # 初始管理员自动创建配置
+    # ============================================================================
+    # 是否在系统启动时自动创建初始管理员（生产环境推荐开启）
+    ADMIN_BOOTSTRAP_ON_START = os.getenv('ADMIN_BOOTSTRAP_ON_START', 'true').lower() == 'true'
+
+    # 初始管理员凭证（仅在无管理员且开启自动创建时使用）
+    INITIAL_ADMIN_USERNAME = os.getenv('INITIAL_ADMIN_USERNAME', 'admin')
+    INITIAL_ADMIN_PASSWORD = os.getenv('INITIAL_ADMIN_PASSWORD')  # 必须通过环境变量设置
+    INITIAL_ADMIN_EMAIL = os.getenv('INITIAL_ADMIN_EMAIL', 'admin@example.com')
+
     _image_providers_config = None
 
     @classmethod

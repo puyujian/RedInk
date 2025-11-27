@@ -33,6 +33,8 @@ export interface AuthState {
   accessToken: string | null
   /** 当前用户信息 */
   user: AuthUser | null
+  /** 是否已完成初始化（用于路由守卫判断） */
+  _initialized: boolean
 }
 
 // ============================================================================
@@ -45,6 +47,7 @@ export const useAuthStore = defineStore('auth', {
     initializing: false,
     accessToken: null,
     user: null,
+    _initialized: false,
   }),
 
   getters: {
@@ -269,6 +272,7 @@ export const useAuthStore = defineStore('auth', {
         }
       } finally {
         this.initializing = false
+        this._initialized = true
       }
     },
 

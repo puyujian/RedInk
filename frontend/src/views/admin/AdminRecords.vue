@@ -146,6 +146,7 @@
           <button class="btn-close" @click="showDetailModal = false">×</button>
         </div>
         <div class="modal-body" v-if="detailRecord">
+          <!-- 基本信息 -->
           <div class="detail-grid">
             <div class="detail-item">
               <label>ID</label>
@@ -153,7 +154,7 @@
             </div>
             <div class="detail-item">
               <label>UUID</label>
-              <span>{{ detailRecord.record_uuid }}</span>
+              <span class="uuid-text">{{ detailRecord.record_uuid }}</span>
             </div>
             <div class="detail-item">
               <label>标题</label>
@@ -182,9 +183,55 @@
               <span>{{ formatDate(detailRecord.updated_at) }}</span>
             </div>
           </div>
-          <div class="detail-section" v-if="detailRecord.outline_raw">
-            <h4>原始大纲</h4>
-            <pre class="outline-content">{{ detailRecord.outline_raw }}</pre>
+
+          <!-- 生成的图片 -->
+          <div class="detail-section">
+            <h4>生成的图片 ({{ getGeneratedImages().length }})</h4>
+            <div v-if="getGeneratedImages().length > 0" class="images-grid">
+              <div
+                v-for="(img, idx) in getGeneratedImages()"
+                :key="idx"
+                class="image-item"
+              >
+                <img :src="`/api/images/${img}`" :alt="`Page ${idx + 1}`" loading="lazy" />
+                <div class="image-footer">
+                  <span>P{{ idx + 1 }}</span>
+                  <a :href="`/api/images/${img}`" download class="download-link">下载</a>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-hint">
+              <span>暂无生成的图片</span>
+              <span class="hint-sub" v-if="detailRecord.status === 'draft'">（草稿状态，尚未生成）</span>
+              <span class="hint-sub" v-else-if="detailRecord.status === 'generating'">（正在生成中...）</span>
+            </div>
+          </div>
+
+          <!-- 大纲页面 -->
+          <div class="detail-section" v-if="getOutlinePages().length > 0">
+            <h4>大纲内容 ({{ getOutlinePages().length }} 页)</h4>
+            <div class="outline-pages">
+              <div
+                v-for="(page, idx) in getOutlinePages()"
+                :key="idx"
+                class="outline-page-card"
+              >
+                <div class="outline-page-header">
+                  <span class="page-badge">P{{ idx + 1 }}</span>
+                  <span v-if="page.type" :class="['type-badge', `type-${page.type}`]">
+                    {{ getPageTypeName(page.type) }}
+                  </span>
+                  <span class="word-count">{{ page.content?.length || 0 }} 字</span>
+                </div>
+                <div class="outline-page-content">{{ page.content }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 原始输入 -->
+          <div class="detail-section" v-if="getOutlineRaw()">
+            <h4>原始输入</h4>
+            <pre class="outline-content">{{ getOutlineRaw() }}</pre>
           </div>
         </div>
       </div>
@@ -256,6 +303,9 @@ const recordToDelete = ref<AdminRecord | null>(null)
 const deleteSubmitting = ref(false)
 const deleteError = ref('')
 
+// 用于防止竞态条件的 token
+let fetchToken = 0
+
 const statusLabels: Record<string, string> = {
   draft: '草稿',
   generating: '生成中',
@@ -277,6 +327,8 @@ function debouncedSearch() {
 }
 
 async function fetchRecords() {
+  // 递增 token 防止竞态条件
+  const currentToken = ++fetchToken
   loading.value = true
   error.value = ''
   selectedIds.value = []
@@ -288,6 +340,8 @@ async function fetchRecords() {
       status: filterStatus.value || undefined,
       user_id: filterUserId.value ? Number(filterUserId.value) : undefined,
     })
+    // 检查是否为最新请求，防止旧请求覆盖新数据
+    if (currentToken !== fetchToken) return
     if (response.success) {
       records.value = response.items || []
       totalPages.value = response.pages || 1
@@ -295,9 +349,12 @@ async function fetchRecords() {
       error.value = response.error || '获取记录列表失败'
     }
   } catch (e: unknown) {
+    if (currentToken !== fetchToken) return
     error.value = e instanceof Error ? e.message : '网络错误'
   } finally {
-    loading.value = false
+    if (currentToken === fetchToken) {
+      loading.value = false
+    }
   }
 }
 
@@ -392,6 +449,74 @@ async function deleteRecords() {
   } finally {
     deleteSubmitting.value = false
   }
+}
+
+// 获取生成的图片列表
+function getGeneratedImages(): string[] {
+  if (!detailRecord.value) return []
+
+  // 优先从 images_json 获取
+  if (detailRecord.value.images_json) {
+    const imagesJson = detailRecord.value.images_json as {
+      generated?: string[]
+      task_id?: string
+    }
+    if (imagesJson.generated && imagesJson.generated.length > 0) {
+      return imagesJson.generated.filter(img => img) // 过滤空值
+    }
+  }
+
+  return []
+}
+
+// 获取大纲页面列表
+interface OutlinePage {
+  type?: string
+  content?: string
+  index?: number
+}
+
+function getOutlinePages(): OutlinePage[] {
+  if (!detailRecord.value) return []
+
+  // 优先从 outline_json 获取
+  if (detailRecord.value.outline_json) {
+    const outlineJson = detailRecord.value.outline_json as {
+      pages?: OutlinePage[]
+      raw?: string
+    }
+    if (outlineJson.pages && outlineJson.pages.length > 0) {
+      return outlineJson.pages
+    }
+  }
+
+  return []
+}
+
+// 获取原始输入
+function getOutlineRaw(): string {
+  if (!detailRecord.value) return ''
+
+  // 优先从 outline_json.raw 获取
+  if (detailRecord.value.outline_json) {
+    const outlineJson = detailRecord.value.outline_json as { raw?: string }
+    if (outlineJson.raw) {
+      return outlineJson.raw
+    }
+  }
+
+  // 降级到 outline_raw
+  return detailRecord.value.outline_raw || ''
+}
+
+// 获取页面类型名称
+function getPageTypeName(type: string): string {
+  const names: Record<string, string> = {
+    cover: '封面',
+    content: '内容',
+    summary: '总结'
+  }
+  return names[type] || '内容'
 }
 
 onMounted(() => {
@@ -658,8 +783,9 @@ onMounted(() => {
   width: 480px;
   max-width: 90vw;
   max-height: 90vh;
-  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-sm {
@@ -676,6 +802,7 @@ onMounted(() => {
   align-items: center;
   padding: 20px 24px;
   border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -700,6 +827,9 @@ onMounted(() => {
 
 .modal-body {
   padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -708,6 +838,7 @@ onMounted(() => {
   gap: 12px;
   padding: 16px 24px;
   border-top: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .detail-grid {
@@ -790,5 +921,153 @@ onMounted(() => {
   font-size: 18px;
   color: #dc2626;
   cursor: pointer;
+}
+
+/* UUID文本样式 */
+.uuid-text {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+/* 图片网格样式 */
+.images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.image-item {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.image-item img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+  display: block;
+}
+
+.image-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+}
+
+.download-link {
+  color: #667eea;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.download-link:hover {
+  text-decoration: underline;
+}
+
+/* 大纲页面样式 */
+.outline-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.outline-page-card {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.outline-page-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.page-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 24px;
+  padding: 0 8px;
+  background: #667eea;
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+.type-badge.type-cover {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.type-badge.type-content {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.type-badge.type-summary {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.word-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.outline-page-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 空状态提示 */
+.empty-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px dashed #e5e7eb;
+  color: #9ca3af;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+.empty-hint .hint-sub {
+  font-size: 12px;
+  color: #d1d5db;
+  margin-top: 4px;
 }
 </style>

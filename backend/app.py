@@ -11,6 +11,20 @@ from backend.routes.admin import admin_bp
 logger = logging.getLogger(__name__)
 
 
+def bootstrap_initial_admin():
+    """
+    应用启动时自动创建初始管理员账户(如果需要)
+    此函数为幂等操作,可以安全地多次调用
+    """
+    try:
+        # 导入放在函数内部,避免循环导入
+        from backend.init_db import bootstrap_initial_admin as _bootstrap
+        _bootstrap()
+    except Exception as e:
+        logger.error(f"自动创建管理员时出错: {e}", exc_info=True)
+        # 不抛出异常,避免影响应用启动
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -21,12 +35,17 @@ def create_app():
             logger.info(f"开发环境检测到,正在初始化数据库: {Config.DATABASE_URL}")
             init_db()
             logger.info("数据库表结构初始化完成")
+
+            # 自动创建初始管理员账户(幂等)
+            bootstrap_initial_admin()
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}", exc_info=True)
             # 开发环境直接抛出异常,方便尽早发现问题
             raise RuntimeError(f"数据库初始化失败,请检查配置: {e}") from e
     else:
         logger.info(f"生产环境或非 SQLite 数据库,跳过自动建表: {Config.DATABASE_URL}")
+        # 生产环境也尝试创建管理员(如果配置了环境变量)
+        bootstrap_initial_admin()
 
     # 配置 CORS(支持认证和自定义请求头)
     CORS(app, resources={

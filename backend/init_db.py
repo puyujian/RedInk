@@ -11,7 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.db import init_db, get_db
-from backend.models import Role, Permission, RolePermission
+from backend.models import Role, Permission, RolePermission, User
+from backend.auth import hash_password
+from backend.config import Config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -121,6 +123,160 @@ def create_default_roles_and_permissions():
         db.close()
 
 
+def bootstrap_initial_admin():
+    """
+    自动创建初始管理员账户(幂等)
+
+    仅在以下条件全部满足时创建:
+    1. ADMIN_BOOTSTRAP_ON_START 配置开启
+    2. 数据库中没有任何管理员账户
+    3. 环境变量中配置了完整且有效的管理员凭证
+
+    此函数保证幂等性,不会重复创建管理员
+    """
+    if not Config.ADMIN_BOOTSTRAP_ON_START:
+        logger.info("管理员自动创建功能已关闭")
+        return
+
+    db = get_db()
+    try:
+        # 检查是否已存在管理员
+        existing_admin = db.query(User).filter(User.role == 'admin').first()
+        if existing_admin:
+            logger.info(f"系统中已存在管理员账户,跳过自动创建")
+            return
+
+        # 检查环境变量配置是否完整
+        if not Config.INITIAL_ADMIN_PASSWORD:
+            logger.warning(
+                "未设置 INITIAL_ADMIN_PASSWORD 环境变量,"
+                "无法自动创建管理员账户。"
+                "请运行 'python backend/create_admin.py' 手动创建"
+            )
+            return
+
+        # 严格验证用户名
+        username = (Config.INITIAL_ADMIN_USERNAME or '').strip()
+        if not username:
+            logger.error("INITIAL_ADMIN_USERNAME 为空,无法创建管理员")
+            return
+        if len(username) < 3 or len(username) > 50:
+            logger.error(
+                f"INITIAL_ADMIN_USERNAME 长度必须在 3-50 字符之间,"
+                f"当前长度: {len(username)}"
+            )
+            return
+
+        # 严格验证邮箱
+        email = (Config.INITIAL_ADMIN_EMAIL or '').strip()
+        if not email:
+            logger.error("INITIAL_ADMIN_EMAIL 为空,无法创建管理员")
+            return
+        if '@' not in email or '.' not in email.split('@')[1]:
+            logger.error(f"INITIAL_ADMIN_EMAIL 格式不正确: {email}")
+            return
+
+        # 严格验证密码强度
+        password = Config.INITIAL_ADMIN_PASSWORD
+        if len(password) < 8:
+            logger.error(
+                "INITIAL_ADMIN_PASSWORD 太弱!密码长度至少为 8 个字符。"
+                "为确保安全,建议使用 12 位以上包含大小写字母、数字、符号的强密码"
+            )
+            return
+
+        # 检查密码复杂度(建议至少包含3种字符类型)
+        has_lower = any(c.islower() for c in password)
+        has_upper = any(c.isupper() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() for c in password)
+        complexity = sum([has_lower, has_upper, has_digit, has_special])
+
+        if complexity < 2:
+            logger.error(
+                "INITIAL_ADMIN_PASSWORD 太简单!密码应至少包含以下2种:"
+                "小写字母、大写字母、数字、特殊符号"
+            )
+            return
+
+        if complexity < 3:
+            logger.warning(
+                "INITIAL_ADMIN_PASSWORD 强度一般,建议包含大小写字母、数字和符号"
+            )
+
+        # 检查用户名是否已被占用
+        existing_user = db.query(User).filter(
+            User.username == username
+        ).first()
+        if existing_user:
+            logger.error(
+                f"用户名 '{username}' 已存在(角色: {existing_user.role})。"
+                f"无法创建管理员账户。"
+                f"解决方案: 修改 INITIAL_ADMIN_USERNAME 环境变量,"
+                f"或使用 'python backend/create_admin.py' 手动创建"
+            )
+            return
+
+        # 检查邮箱是否已被占用
+        existing_email = db.query(User).filter(
+            User.email == email
+        ).first()
+        if existing_email:
+            logger.error(
+                f"邮箱 '{email}' 已被使用。无法创建管理员账户。"
+                f"解决方案: 修改 INITIAL_ADMIN_EMAIL 环境变量,"
+                f"或使用 'python backend/create_admin.py' 手动创建"
+            )
+            return
+
+        # 创建管理员账户
+        logger.info("正在创建初始管理员账户...")
+        password_hash = hash_password(password)
+
+        admin_user = User(
+            username=username,
+            email=email,
+            password_hash=password_hash,
+            role='admin',
+            is_active=True,
+        )
+
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+
+        logger.info("=" * 60)
+        logger.info("✅ 初始管理员账户创建成功!")
+        logger.info(f"   用户ID: {admin_user.id}")
+        logger.info(f"   用户名: {admin_user.username}")
+        logger.info(f"   邮箱: {admin_user.email}")
+        logger.info("=" * 60)
+        logger.warning(
+            "🔒 安全提示:"
+        )
+        logger.warning(
+            "   1. 请立即登录后台并修改管理员密码"
+        )
+        logger.warning(
+            "   2. 修改完成后,从环境变量中删除 INITIAL_ADMIN_PASSWORD"
+        )
+        logger.warning(
+            "   3. 检查 .env 文件是否已加入 .gitignore"
+        )
+
+    except Exception as e:
+        logger.error(f"自动创建管理员失败: {e}", exc_info=True)
+        db.rollback()
+        logger.error(
+            "⚠️ 初始化失败!请使用以下方式手动创建管理员:"
+        )
+        logger.error(
+            "   python backend/create_admin.py"
+        )
+    finally:
+        db.close()
+
+
 def main():
     """主函数"""
     try:
@@ -135,6 +291,9 @@ def main():
 
         # 创建默认角色和权限
         create_default_roles_and_permissions()
+
+        # 自动创建初始管理员账户
+        bootstrap_initial_admin()
 
         logger.info("=" * 60)
         logger.info("数据库初始化完成！")

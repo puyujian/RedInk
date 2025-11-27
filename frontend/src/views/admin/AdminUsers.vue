@@ -237,6 +237,9 @@ const currentPage = ref(1)
 const totalPages = ref(1)
 const pageSize = 20
 
+// 用于防止竞态条件的 token
+let fetchToken = 0
+
 // 筛选
 const searchQuery = ref('')
 const filterRole = ref('')
@@ -282,6 +285,8 @@ function debouncedSearch() {
 
 // 获取用户列表
 async function fetchUsers() {
+  // 递增 token 防止竞态条件
+  const currentToken = ++fetchToken
   loading.value = true
   error.value = ''
   try {
@@ -292,6 +297,8 @@ async function fetchUsers() {
       role: filterRole.value || undefined,
       is_active: filterStatus.value === 'active' ? true : filterStatus.value === 'inactive' ? false : undefined,
     })
+    // 检查是否为最新请求，防止旧请求覆盖新数据
+    if (currentToken !== fetchToken) return
     if (response.success) {
       users.value = response.items || []
       totalPages.value = response.pages || 1
@@ -299,9 +306,12 @@ async function fetchUsers() {
       error.value = response.error || '获取用户列表失败'
     }
   } catch (e: unknown) {
+    if (currentToken !== fetchToken) return
     error.value = e instanceof Error ? e.message : '网络错误'
   } finally {
-    loading.value = false
+    if (currentToken === fetchToken) {
+      loading.value = false
+    }
   }
 }
 

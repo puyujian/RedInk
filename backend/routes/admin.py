@@ -14,6 +14,7 @@ from typing import Optional, Any
 import yaml
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import func, or_
+from sqlalchemy.orm import joinedload
 
 from backend.auth import admin_required, get_current_user, hash_password
 from backend.db import get_db
@@ -53,8 +54,44 @@ def _json_error(message: str, status: int = 400) -> tuple:
 def _get_pagination_params() -> tuple:
     """获取分页参数"""
     page = max(int(request.args.get("page", 1)), 1)
-    page_size = min(max(int(request.args.get("page_size", 20)), 1), 100)
+    # 兼容前端使用的 per_page 和后端的 page_size
+    page_size = request.args.get("per_page") or request.args.get("page_size", 20)
+    page_size = min(max(int(page_size), 1), 100)
     return page, page_size
+
+
+def _parse_iso8601(date_str: str) -> Optional[datetime]:
+    """
+    解析 ISO8601 格式的日期时间字符串
+
+    支持以下格式：
+    - 2024-01-15
+    - 2024-01-15T10:30:00
+    - 2024-01-15T10:30:00Z
+    - 2024-01-15T10:30:00+08:00
+
+    返回值始终为 timezone-aware datetime（使用 UTC 作为默认时区）
+    """
+    if not date_str:
+        return None
+
+    try:
+        # 尝试完整 ISO8601 格式（带时区）
+        if "T" in date_str:
+            # 处理 Z 后缀
+            if date_str.endswith("Z"):
+                date_str = date_str[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(date_str)
+            # 如果解析结果无时区信息，补充 UTC 时区
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        else:
+            # 仅日期格式
+            return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"日期解析失败: {date_str}, 错误: {e}")
+        return None
 
 
 def _user_to_dict(user: User) -> dict:
@@ -100,6 +137,7 @@ def _image_to_dict(image: ImageFile) -> dict:
         "filename": image.filename,
         "file_size": image.file_size,
         "created_at": image.created_at.isoformat() if image.created_at else None,
+        "user": {"username": image.user.username} if getattr(image, "user", None) else None,
     }
 
 
@@ -188,15 +226,16 @@ def list_users():
 
             # 统计总数
             total = query.count()
+            pages = (total + page_size - 1) // page_size  # 向上取整计算总页数
 
             # 分页
             offset = (page - 1) * page_size
             users = query.offset(offset).limit(page_size).all()
 
             return _json_success(
-                data=[_user_to_dict(u) for u in users],
+                items=[_user_to_dict(u) for u in users],
                 page=page,
-                page_size=page_size,
+                pages=pages,
                 total=total,
             )
         finally:
@@ -492,10 +531,16 @@ def list_records():
                 query = query.filter(HistoryRecord.status == status)
             if q := request.args.get("q"):
                 query = query.filter(HistoryRecord.title.ilike(f"%{q}%"))
+
+            # 日期筛选（使用 ISO8601 解析）
             if start_at := request.args.get("start_at"):
-                query = query.filter(HistoryRecord.created_at >= start_at)
+                parsed_start = _parse_iso8601(start_at)
+                if parsed_start:
+                    query = query.filter(HistoryRecord.created_at >= parsed_start)
             if end_at := request.args.get("end_at"):
-                query = query.filter(HistoryRecord.created_at <= end_at)
+                parsed_end = _parse_iso8601(end_at)
+                if parsed_end:
+                    query = query.filter(HistoryRecord.created_at <= parsed_end)
 
             # 排序
             sort = request.args.get("sort", "-created_at")
@@ -507,15 +552,16 @@ def list_records():
 
             # 统计总数
             total = query.count()
+            pages = (total + page_size - 1) // page_size  # 向上取整计算总页数
 
             # 分页
             offset = (page - 1) * page_size
             records = query.offset(offset).limit(page_size).all()
 
             return _json_success(
-                data=[_record_to_dict(r) for r in records],
+                items=[_record_to_dict(r) for r in records],
                 page=page,
-                page_size=page_size,
+                pages=pages,
                 total=total,
             )
         finally:
@@ -543,7 +589,7 @@ def get_record(record_id: int):
             data["outline_json"] = record.outline_json
             data["images_json"] = record.images_json
 
-            return _json_success(data=data)
+            return _json_success(record=data)
         finally:
             db.close()
 
@@ -632,6 +678,7 @@ def list_images():
         page_size: 每页数量
         user_id: 用户 ID 筛选
         record_id: 记录 ID 筛选
+        search: 文件名模糊搜索
         start_at: 开始时间
         end_at: 结束时间
         sort: 排序字段
@@ -641,17 +688,25 @@ def list_images():
 
         db = get_db()
         try:
-            query = db.query(ImageFile)
+            query = db.query(ImageFile).options(joinedload(ImageFile.user))
 
             # 筛选条件
             if user_id := request.args.get("user_id"):
                 query = query.filter(ImageFile.user_id == int(user_id))
             if record_id := request.args.get("record_id"):
                 query = query.filter(ImageFile.record_id == int(record_id))
+            if search := request.args.get("search"):
+                query = query.filter(ImageFile.filename.ilike(f"%{search}%"))
+
+            # 日期筛选（使用 ISO8601 解析）
             if start_at := request.args.get("start_at"):
-                query = query.filter(ImageFile.created_at >= start_at)
+                parsed_start = _parse_iso8601(start_at)
+                if parsed_start:
+                    query = query.filter(ImageFile.created_at >= parsed_start)
             if end_at := request.args.get("end_at"):
-                query = query.filter(ImageFile.created_at <= end_at)
+                parsed_end = _parse_iso8601(end_at)
+                if parsed_end:
+                    query = query.filter(ImageFile.created_at <= parsed_end)
 
             # 排序
             sort = request.args.get("sort", "-created_at")
@@ -663,15 +718,16 @@ def list_images():
 
             # 统计总数
             total = query.count()
+            pages = (total + page_size - 1) // page_size  # 向上取整计算总页数
 
             # 分页
             offset = (page - 1) * page_size
             images = query.offset(offset).limit(page_size).all()
 
             return _json_success(
-                data=[_image_to_dict(img) for img in images],
+                items=[_image_to_dict(img) for img in images],
                 page=page,
-                page_size=page_size,
+                pages=pages,
                 total=total,
             )
         finally:
@@ -692,6 +748,10 @@ def image_stats():
             total_count = db.query(ImageFile).count()
             total_size = db.query(func.coalesce(func.sum(ImageFile.file_size), 0)).scalar()
 
+            # 今日新增统计
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_count = db.query(ImageFile).filter(ImageFile.created_at >= today_start).count()
+
             # 按用户统计
             user_stats = db.query(
                 ImageFile.user_id,
@@ -700,10 +760,12 @@ def image_stats():
             ).group_by(ImageFile.user_id).all()
 
             return _json_success(
-                data={
+                stats={
                     "total_count": total_count,
+                    "total_size": total_size,
                     "total_size_bytes": total_size,
                     "total_size_mb": round(total_size / (1024 * 1024), 2) if total_size else 0,
+                    "today_count": today_count,
                     "by_user": [
                         {"user_id": s.user_id, "count": s.count, "size_bytes": s.size}
                         for s in user_stats
@@ -1081,6 +1143,10 @@ def get_registration():
         return _json_error("获取注册配置失败", 500)
 
 
+# 注册时允许的默认角色白名单（禁止设置为 admin）
+ALLOWED_DEFAULT_ROLES = ("user", "pro")
+
+
 @admin_bp.route("/registration", methods=["PUT"])
 @admin_required
 def update_registration():
@@ -1099,6 +1165,13 @@ def update_registration():
     """
     try:
         data = request.get_json() or {}
+
+        # 安全校验：default_role 必须在白名单内（禁止设置为 admin）
+        if "default_role" in data:
+            if data["default_role"] not in ALLOWED_DEFAULT_ROLES:
+                return _json_error(
+                    f"default_role 必须是以下值之一: {', '.join(ALLOWED_DEFAULT_ROLES)}"
+                )
 
         db = get_db()
         try:
@@ -1208,23 +1281,30 @@ def list_audit_logs():
                 query = query.filter(AuditLog.action == action)
             if resource_type := request.args.get("resource_type"):
                 query = query.filter(AuditLog.resource_type == resource_type)
+
+            # 日期筛选（使用 ISO8601 解析）
             if start_at := request.args.get("start_at"):
-                query = query.filter(AuditLog.created_at >= start_at)
+                parsed_start = _parse_iso8601(start_at)
+                if parsed_start:
+                    query = query.filter(AuditLog.created_at >= parsed_start)
             if end_at := request.args.get("end_at"):
-                query = query.filter(AuditLog.created_at <= end_at)
+                parsed_end = _parse_iso8601(end_at)
+                if parsed_end:
+                    query = query.filter(AuditLog.created_at <= parsed_end)
 
             # 排序（默认按时间降序）
             query = query.order_by(AuditLog.created_at.desc())
 
             # 统计总数
             total = query.count()
+            pages = (total + page_size - 1) // page_size  # 向上取整计算总页数
 
             # 分页
             offset = (page - 1) * page_size
             logs = query.offset(offset).limit(page_size).all()
 
             return _json_success(
-                data=[
+                items=[
                     {
                         "id": log.id,
                         "actor_id": log.actor_id,
@@ -1239,7 +1319,7 @@ def list_audit_logs():
                     for log in logs
                 ],
                 page=page,
-                page_size=page_size,
+                pages=pages,
                 total=total,
             )
         finally:
@@ -1265,6 +1345,9 @@ def dashboard_stats():
             total_users = db.query(User).count()
             active_users = db.query(User).filter(User.is_active == True).count()
 
+            # PRO用户数量统计（role字段直接查询）
+            pro_users = db.query(User).filter(User.role == "pro").count()
+
             # 记录统计
             total_records = db.query(HistoryRecord).count()
             completed_records = db.query(HistoryRecord).filter(
@@ -1279,6 +1362,7 @@ def dashboard_stats():
                 "users": {
                     "total": total_users,
                     "active": active_users,
+                    "pro": pro_users,  # PRO用户数量（VIP用户）
                 },
                 "records": {
                     "total": total_records,

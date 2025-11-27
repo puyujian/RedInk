@@ -69,8 +69,8 @@
             <span class="detail-value danger">{{ stats.inactive_users }}</span>
           </div>
           <div class="detail-item">
-            <span class="detail-label">管理员数量</span>
-            <span class="detail-value">{{ stats.admin_count }}</span>
+            <span class="detail-label">VIP用户数</span>
+            <span class="detail-value">{{ stats.pro_count }}</span>
           </div>
         </div>
       </div>
@@ -115,11 +115,13 @@ import { getDashboardStats, type DashboardStats } from '@/api/admin'
 
 const loading = ref(false)
 const error = ref('')
-const stats = ref<DashboardStats>({
+
+// 默认统计数据（防御性编程）
+const defaultStats: DashboardStats = {
   total_users: 0,
   active_users: 0,
   inactive_users: 0,
-  admin_count: 0,
+  pro_count: 0,
   users_today: 0,
   total_records: 0,
   completed_records: 0,
@@ -129,7 +131,9 @@ const stats = ref<DashboardStats>({
   total_images: 0,
   images_today: 0,
   total_storage_bytes: 0,
-})
+}
+
+const stats = ref<DashboardStats>({ ...defaultStats })
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -145,11 +149,16 @@ async function fetchStats() {
   try {
     const response = await getDashboardStats()
     if (response.success && response.stats) {
-      stats.value = response.stats
+      // 使用扩展运算符安全合并数据，确保所有字段都有值
+      stats.value = { ...defaultStats, ...response.stats }
     } else {
+      // 失败时重置为默认值
+      stats.value = { ...defaultStats }
       error.value = response.error || '获取统计数据失败'
     }
   } catch (e: unknown) {
+    // 异常时也重置为默认值
+    stats.value = { ...defaultStats }
     error.value = e instanceof Error ? e.message : '网络错误'
   } finally {
     loading.value = false

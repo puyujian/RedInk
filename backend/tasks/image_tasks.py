@@ -17,12 +17,15 @@ import base64
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.task_queue.task_store import TaskStore, TaskStatus, TaskType
 from backend.services.image import ImageService, ImageTaskStateStore
 from backend.services.history import get_history_service
 from backend.utils.image_compressor import compress_image
+from backend.db import db_session
+from backend.models import ImageFile, HistoryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +129,55 @@ def _decode_base64_images(images_base64: Optional[List[str]]) -> List[bytes]:
         except Exception as e:
             logger.warning(f"[图片任务] 用户图片解码失败 index={idx}: {e}")
     return result
+
+
+def _create_image_file(
+    task_id: str,
+    user_id: Optional[int],
+    record_uuid: str,
+    filename: str,
+    file_path: Path,
+) -> None:
+    """创建图片文件记录，便于后台管理统计。
+
+    Args:
+        task_id: 任务 ID
+        user_id: 用户 ID
+        record_uuid: 历史记录 UUID
+        filename: 图片文件名
+        file_path: 图片文件路径
+    """
+    if not user_id or not filename:
+        return
+
+    file_size = None
+    try:
+        file_size = file_path.stat().st_size
+    except Exception as e:
+        logger.warning(f"[图片任务] 读取文件大小失败: path={file_path}, error={e}")
+
+    try:
+        with db_session() as db:
+            # 根据 record_uuid 查询对应的数据库记录 ID
+            record = (
+                db.query(HistoryRecord)
+                .filter(HistoryRecord.record_uuid == record_uuid)
+                .first()
+                if record_uuid
+                else None
+            )
+            image_file = ImageFile(
+                user_id=user_id,
+                record_id=record.id if record else None,
+                task_id=task_id,
+                filename=filename,
+                file_size=file_size,
+            )
+            db.add(image_file)
+    except Exception as e:
+        logger.warning(
+            f"[图片任务] 创建 ImageFile 记录失败: task_id={task_id}, filename={filename}, error={e}"
+        )
 
 
 def _publish_event(task_id: str, event_type: str, data: Dict[str, Any]) -> None:
@@ -286,6 +338,9 @@ def generate_images_task(task_id: str) -> None:
                 except Exception as e:
                     logger.warning(f"[图片任务] 读取封面图失败: task_id={task_id}, error={e}")
 
+                # 创建图片文件记录
+                _create_image_file(task_id, user_id, record_id, filename, Path(cover_path))
+
                 # 构建候选图片 URL 列表
                 candidate_files = candidates or [filename]
                 candidate_urls = [f"/api/images/{f}" for f in candidate_files]
@@ -371,6 +426,10 @@ def generate_images_task(task_id: str) -> None:
                         if success and filename:
                             generated_images.append(filename)
                             ImageTaskStateStore.add_generated(task_id, index, filename, candidates)
+
+                            # 创建图片文件记录
+                            image_path = image_service.get_image_path(filename)
+                            _create_image_file(task_id, user_id, record_id, filename, Path(image_path))
 
                             candidate_files = candidates or [filename]
                             candidate_urls = [f"/api/images/{f}" for f in candidate_files]

@@ -143,7 +143,7 @@ export interface DashboardStats {
   total_users: number
   active_users: number
   inactive_users: number
-  admin_count: number
+  pro_count: number  // PRO用户数量（VIP用户）
   users_today: number
   total_records: number
   completed_records: number
@@ -355,7 +355,14 @@ export async function batchDeleteImages(ids: number[]): Promise<ApiResponse<void
 // 配置文件管理 API
 // ============================================================================
 
-export async function getImageProvidersConfig(): Promise<ApiResponse<void> & { config?: { content: string; version: number } }> {
+/**
+ * 获取图片服务商配置
+ *
+ * @returns 配置内容和解析后的 YAML 对象
+ */
+export async function getImageProvidersConfig(): Promise<
+  ApiResponse<{ content: string; parsed: unknown }>
+> {
   try {
     const response = await adminClient.get('/config/image-providers')
     return response.data
@@ -460,10 +467,78 @@ export async function getAuditLogs(params?: {
 // 仪表盘 API
 // ============================================================================
 
+/**
+ * 后端返回的原始统计数据结构（嵌套格式）
+ */
+interface RawDashboardData {
+  users?: {
+    total?: number
+    active?: number
+    pro?: number  // PRO用户数量
+  }
+  records?: {
+    total?: number
+    completed?: number
+  }
+  images?: {
+    total?: number
+    size_bytes?: number
+    size_mb?: number
+  }
+}
+
+/**
+ * 将后端返回的嵌套数据结构映射为前端期望的扁平结构
+ */
+function mapDashboardStats(rawData?: RawDashboardData): DashboardStats {
+  const users = rawData?.users ?? {}
+  const records = rawData?.records ?? {}
+  const images = rawData?.images ?? {}
+
+  const totalUsers = users.total ?? 0
+  const activeUsers = users.active ?? 0
+
+  return {
+    // 用户统计
+    total_users: totalUsers,
+    active_users: activeUsers,
+    inactive_users: Math.max(totalUsers - activeUsers, 0), // 计算得出
+    pro_count: users.pro ?? 0, // PRO用户数量（VIP用户）
+    users_today: 0, // 后端暂未提供
+
+    // 记录统计
+    total_records: records.total ?? 0,
+    completed_records: records.completed ?? 0,
+    generating_records: 0, // 后端暂未提供
+    draft_records: 0, // 后端暂未提供
+    records_today: 0, // 后端暂未提供
+
+    // 图片统计
+    total_images: images.total ?? 0,
+    images_today: 0, // 后端暂未提供
+    total_storage_bytes: images.size_bytes ?? 0,
+  }
+}
+
 export async function getDashboardStats(): Promise<ApiResponse<void> & { stats?: DashboardStats }> {
   try {
     const response = await adminClient.get('/dashboard/stats')
-    return response.data
+    const apiData = response.data
+
+    // 检查响应是否成功
+    if (apiData.success && apiData.data) {
+      // 将后端返回的嵌套数据映射为前端期望的扁平结构
+      const stats = mapDashboardStats(apiData.data as RawDashboardData)
+      return {
+        success: true,
+        stats,
+      }
+    } else {
+      return {
+        success: false,
+        error: apiData.error || '获取统计数据失败',
+      }
+    }
   } catch (error: unknown) {
     const err = error as { response?: { data?: { error?: string } } }
     return { success: false, error: err.response?.data?.error || '获取统计失败' }

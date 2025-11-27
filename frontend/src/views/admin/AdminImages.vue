@@ -205,6 +205,8 @@ const imageToDelete = ref<AdminImage | null>(null)
 const deleteSubmitting = ref(false)
 const deleteError = ref('')
 
+// 用于防止竞态条件的 token
+let fetchToken = 0
 let searchTimeout: number | null = null
 function debouncedSearch() {
   if (searchTimeout) clearTimeout(searchTimeout)
@@ -215,7 +217,8 @@ function debouncedSearch() {
 }
 
 function getImageUrl(filename: string): string {
-  return `/api/images/${filename}`
+  // 对文件名进行 URL 编码，防止特殊字符导致请求失败
+  return `/api/images/${encodeURIComponent(filename)}`
 }
 
 function formatBytes(bytes: number): string {
@@ -250,6 +253,8 @@ async function fetchStats() {
 }
 
 async function fetchImages() {
+  // 递增 token 防止竞态条件
+  const currentToken = ++fetchToken
   loading.value = true
   error.value = ''
   selectedIds.value = []
@@ -260,6 +265,8 @@ async function fetchImages() {
       search: searchQuery.value || undefined,
       user_id: filterUserId.value ? Number(filterUserId.value) : undefined,
     })
+    // 检查是否为最新请求，防止旧请求覆盖新数据
+    if (currentToken !== fetchToken) return
     if (response.success) {
       images.value = response.items || []
       totalPages.value = response.pages || 1
@@ -267,9 +274,12 @@ async function fetchImages() {
       error.value = response.error || '获取图片列表失败'
     }
   } catch (e: unknown) {
+    if (currentToken !== fetchToken) return
     error.value = e instanceof Error ? e.message : '网络错误'
   } finally {
-    loading.value = false
+    if (currentToken === fetchToken) {
+      loading.value = false
+    }
   }
 }
 
