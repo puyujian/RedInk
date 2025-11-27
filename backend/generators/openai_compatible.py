@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from .base import ImageGeneratorBase
+from ..utils.image_compressor import compress_image
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -141,6 +142,107 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             )
             return DEFAULT_IMAGE_INDEX
 
+    def _collect_reference_images(
+        self,
+        reference_image: Optional[bytes],
+        reference_images: Optional[List[bytes]]
+    ) -> List[bytes]:
+        """
+        收集所有参考图片
+
+        Args:
+            reference_image: 单张参考图片数据（向后兼容）
+            reference_images: 多张参考图片数据列表
+
+        Returns:
+            合并后的参考图片列表
+        """
+        all_images = []
+
+        # 优先使用 reference_images 列表
+        if reference_images and len(reference_images) > 0:
+            all_images.extend(reference_images)
+
+        # 向后兼容：如果有单张 reference_image，添加到列表
+        if reference_image and reference_image not in all_images:
+            all_images.append(reference_image)
+
+        return all_images
+
+    def _build_chat_messages_with_images(
+        self,
+        prompt: str,
+        reference_images: List[bytes]
+    ) -> List[Dict[str, Any]]:
+        """
+        构建包含参考图片的 chat messages
+
+        对于 chat/completions 端点，使用 OpenAI Vision API 格式：
+        content 为数组，包含 text 和 image_url 类型的元素
+
+        Args:
+            prompt: 原始提示词
+            reference_images: 参考图片数据列表
+
+        Returns:
+            构建好的 messages 列表
+        """
+        if not reference_images:
+            # 无参考图片时，使用简单的文本消息格式
+            return [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+
+        # 有参考图片时，构建多模态消息
+        content_parts = []
+
+        # 添加参考图片（压缩后转为 base64 Data URI）
+        for idx, img_data in enumerate(reference_images):
+            try:
+                # 压缩图片到 200KB 以内
+                compressed_img = compress_image(img_data, max_size_kb=200)
+                base64_image = base64.b64encode(compressed_img).decode('utf-8')
+                data_uri = f"data:image/png;base64,{base64_image}"
+
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": data_uri
+                    }
+                })
+                logger.debug(f"添加参考图片 {idx + 1}/{len(reference_images)}")
+            except Exception as e:
+                logger.warning(f"处理参考图片 {idx + 1} 失败: {e}")
+                continue
+
+        # 增强提示词以利用参考图
+        ref_count = len(reference_images)
+        enhanced_prompt = f"""参考提供的 {ref_count} 张图片的风格（色彩、光影、构图、氛围），生成一张新图片。
+
+新图片内容：{prompt}
+
+要求：
+1. 保持相似的色调和氛围
+2. 使用相似的光影处理
+3. 保持一致的画面质感
+4. 如果参考图中有人物或产品，可以适当融入"""
+
+        # 添加文本部分
+        content_parts.append({
+            "type": "text",
+            "text": enhanced_prompt
+        })
+
+        return [
+            {
+                "role": "user",
+                "content": content_parts
+            }
+        ]
+
     @retry_on_error(max_retries=5, base_delay=3)
     def generate_image(
         self,
@@ -148,6 +250,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         size: str = "1024x1024",
         model: str = None,
         quality: str = "standard",
+        reference_image: Optional[bytes] = None,
+        reference_images: Optional[List[bytes]] = None,
         **kwargs
     ) -> bytes:
         """
@@ -158,6 +262,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             size: 图片尺寸 (如 "1024x1024", "2048x2048", "4096x4096")
             model: 模型名称
             quality: 质量 ("standard" 或 "hd")
+            reference_image: 单张参考图片数据（向后兼容）
+            reference_images: 多张参考图片数据列表
             **kwargs: 其他参数
                 - image_index: 指定返回第几张图片（用于多图返回场景）
 
@@ -170,9 +276,15 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         # 支持通过 kwargs 覆盖图片索引
         image_index = kwargs.get("image_index")
 
+        # 收集所有参考图片
+        all_reference_images = self._collect_reference_images(
+            reference_image, reference_images
+        )
+
         logger.info(
             f"[GENERATE] 开始生成图片: endpoint_type={self.endpoint_type}, "
-            f"chat_stream_enabled={self.chat_stream_enabled}"
+            f"chat_stream_enabled={self.chat_stream_enabled}, "
+            f"reference_images_count={len(all_reference_images)}"
         )
 
         if self.endpoint_type == 'images':
@@ -183,12 +295,16 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             if self.chat_stream_enabled:
                 logger.info("[GENERATE] 选择路径: chat API (流式)")
                 return self._generate_via_chat_api_streaming(
-                    prompt, size, model, image_index=image_index
+                    prompt, size, model,
+                    image_index=image_index,
+                    reference_images=all_reference_images
                 )
             else:
                 logger.info("[GENERATE] 选择路径: chat API (非流式)")
                 return self._generate_via_chat_api(
-                    prompt, size, model, image_index=image_index
+                    prompt, size, model,
+                    image_index=image_index,
+                    reference_images=all_reference_images
                 )
         else:
             raise ValueError(f"不支持的端点类型: {self.endpoint_type}")
@@ -363,7 +479,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         prompt: str,
         size: str,
         model: str,
-        image_index: Optional[int] = None
+        image_index: Optional[int] = None,
+        reference_images: Optional[List[bytes]] = None
     ) -> bytes:
         """
         通过 /v1/chat/completions 端点使用流式模式生成图片
@@ -377,6 +494,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             size: 图片尺寸
             model: 模型名称
             image_index: 指定返回第几张图片（None表示使用配置的默认值）
+            reference_images: 参考图片数据列表
 
         Returns:
             图片二进制数据
@@ -397,22 +515,25 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             "Content-Type": "application/json"
         }
 
+        # 构建 messages（支持参考图片）
+        messages = self._build_chat_messages_with_images(
+            safe_prompt,
+            reference_images or []
+        )
+
         payload = {
             "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
+            "messages": messages,
             "temperature": 1.0,
             "size": size,
             "stream": True  # 启用流式模式
         }
 
+        ref_count = len(reference_images) if reference_images else 0
         logger.info(
             f"[STREAMING] Chat API 流式请求: model={model}, size={size}, "
-            f"stream={payload['stream']}, prompt_length={len(safe_prompt)}"
+            f"stream={payload['stream']}, prompt_length={len(safe_prompt)}, "
+            f"reference_images={ref_count}"
         )
 
         # 使用流式请求，设置合理的超时时间
@@ -467,7 +588,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         prompt: str,
         size: str,
         model: str,
-        image_index: Optional[int] = None
+        image_index: Optional[int] = None,
+        reference_images: Optional[List[bytes]] = None
     ) -> bytes:
         """
         通过 /v1/chat/completions 端点生成图片
@@ -482,6 +604,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             size: 图片尺寸
             model: 模型名称
             image_index: 指定返回第几张图片（None表示使用配置的默认值）
+            reference_images: 参考图片数据列表
 
         Returns:
             图片二进制数据
@@ -502,21 +625,23 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             "Content-Type": "application/json"
         }
 
+        # 构建 messages（支持参考图片）
+        messages = self._build_chat_messages_with_images(
+            safe_prompt,
+            reference_images or []
+        )
+
         payload = {
             "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
+            "messages": messages,
             "temperature": 1.0,
             "size": size
         }
 
+        ref_count = len(reference_images) if reference_images else 0
         logger.info(
             f"[NON-STREAMING] Chat API 请求: model={model}, size={size}, "
-            f"prompt_length={len(safe_prompt)}"
+            f"prompt_length={len(safe_prompt)}, reference_images={ref_count}"
         )
 
         response = requests.post(

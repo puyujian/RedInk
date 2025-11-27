@@ -840,6 +840,7 @@ export interface HistoryDetail {
   images: {
     task_id: string | null
     generated: string[]
+    candidates_map?: Record<string, string[]>  // 每个图片索引对应的候选图片列表
   }
   status: string
   thumbnail: string | null
@@ -894,7 +895,7 @@ export async function updateHistory(
   recordId: string,
   data: {
     outline?: { raw: string; pages: Page[] }
-    images?: { task_id: string | null; generated: string[] }
+    images?: { task_id: string | null; generated: string[]; candidates_map?: Record<string, string[]> }
     status?: string
     thumbnail?: string
   }

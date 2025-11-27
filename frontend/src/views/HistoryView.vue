@@ -241,6 +241,26 @@
                     loading="lazy"
                     decoding="async"
                   />
+                  <!-- 候选图片切换按钮 -->
+                  <div
+                    v-if="getCandidatesForImage(idx).length > 1"
+                    class="candidate-switcher"
+                    @click.stop
+                  >
+                    <button
+                      class="candidate-btn"
+                      @click.stop="openCandidateSelector(idx)"
+                      :title="`${getCandidatesForImage(idx).length} 张候选图片可选`"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                      </svg>
+                      <span>{{ getCandidatesForImage(idx).length }}</span>
+                    </button>
+                  </div>
                   <!-- 重新生成按钮（悬停显示） -->
                   <div class="modal-img-overlay">
                     <button
@@ -286,6 +306,33 @@
       </div>
     </div>
 
+    <!-- 候选图片选择弹窗 -->
+    <div v-if="candidateSelectorVisible" class="candidate-modal" @click="closeCandidateSelector">
+      <div class="candidate-modal-content" @click.stop>
+        <div class="candidate-modal-header">
+          <h3>选择图片</h3>
+          <button class="close-btn" @click="closeCandidateSelector">×</button>
+        </div>
+        <div class="candidate-grid">
+          <div
+            v-for="(url, idx) in selectedImageCandidates"
+            :key="idx"
+            class="candidate-item"
+            :class="{ selected: idx === selectedImageCurrentIndex }"
+            @click="selectCandidate(idx)"
+          >
+            <img :src="url + '?t=' + new Date().getTime()" :alt="`候选图片 ${idx + 1}`" />
+            <div class="candidate-index">{{ idx + 1 }}</div>
+            <div v-if="idx === selectedImageCurrentIndex" class="selected-badge">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -319,6 +366,12 @@ const titleExpanded = ref(false)
 const rawInputExpanded = ref(false)
 // 大纲模态框显示状态
 const showOutlineModal = ref(false)
+
+// 候选图片选择相关状态
+const candidateSelectorVisible = ref(false)
+const selectedImageIndex = ref<number | null>(null)
+const selectedImageCandidates = ref<string[]>([])
+const selectedImageCurrentIndex = ref(0)
 
 // 监听登录状态变化
 watch(() => authStore.isAuthenticated, (isAuthenticated) => {
@@ -446,6 +499,63 @@ const copyOriginalInput = async () => {
   } catch (e) {
     alert('复制失败，请手动复制')
   }
+}
+
+// 获取图片的候选列表
+const getCandidatesForImage = (idx: number): string[] => {
+  if (!viewingRecord.value?.images?.candidates_map) return []
+  const candidates = viewingRecord.value.images.candidates_map[String(idx)]
+  if (!candidates || candidates.length <= 1) return []
+  return candidates.map((f: string) => `/api/images/${f}`)
+}
+
+// 打开候选图片选择器
+const openCandidateSelector = (idx: number) => {
+  const candidates = getCandidatesForImage(idx)
+  if (candidates.length === 0) return
+  selectedImageIndex.value = idx
+  selectedImageCandidates.value = candidates
+  // 当前选中的是 generated 数组中的图片，找到它在候选列表中的索引
+  const currentFile = viewingRecord.value.images.generated[idx]
+  const currentUrl = `/api/images/${currentFile}`
+  const currentIdx = candidates.indexOf(currentUrl)
+  selectedImageCurrentIndex.value = currentIdx >= 0 ? currentIdx : 0
+  candidateSelectorVisible.value = true
+}
+
+// 关闭候选图片选择器
+const closeCandidateSelector = () => {
+  candidateSelectorVisible.value = false
+  selectedImageIndex.value = null
+  selectedImageCandidates.value = []
+}
+
+// 选择候选图片
+const selectCandidate = async (candidateIdx: number) => {
+  if (selectedImageIndex.value === null || !viewingRecord.value) return
+
+  const idx = selectedImageIndex.value
+  const candidates = viewingRecord.value.images.candidates_map?.[String(idx)]
+  if (!candidates || candidateIdx >= candidates.length) return
+
+  // 更新 generated 数组
+  viewingRecord.value.images.generated[idx] = candidates[candidateIdx]
+  selectedImageCurrentIndex.value = candidateIdx
+
+  // 更新历史记录
+  try {
+    await updateHistory(viewingRecord.value.id, {
+      images: {
+        task_id: viewingRecord.value.images.task_id,
+        generated: viewingRecord.value.images.generated,
+        candidates_map: viewingRecord.value.images.candidates_map
+      }
+    })
+  } catch (e) {
+    console.error('更新历史记录失败:', e)
+  }
+
+  closeCandidateSelector()
 }
 
 const confirmDelete = async (record: any) => {
@@ -1134,5 +1244,148 @@ onMounted(() => {
   color: #333;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 候选图片切换按钮 */
+.candidate-switcher {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+}
+
+.candidate-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.candidate-btn:hover {
+  background: var(--primary);
+  transform: scale(1.05);
+}
+
+/* 候选图片选择弹窗 */
+.candidate-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+  backdrop-filter: blur(4px);
+}
+
+.candidate-modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.candidate-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.candidate-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #e0e0e0;
+}
+
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.candidate-item {
+  position: relative;
+  aspect-ratio: 3/4;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+.candidate-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.candidate-item.selected {
+  border-color: var(--primary);
+}
+
+.candidate-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.candidate-index {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 24px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.selected-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

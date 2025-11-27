@@ -42,19 +42,36 @@
           <!-- 图片展示区域 -->
           <div v-if="image.url && image.status === 'done'" class="image-preview">
             <img :src="image.url" :alt="`第 ${image.index + 1} 页`" />
-            <!-- 重新生成按钮（悬停显示） -->
+            <!-- 操作按钮（悬停显示） -->
             <div class="image-overlay">
-              <button
-                class="overlay-btn"
-                @click="regenerateImage(image.index)"
-                :disabled="image.status === 'retrying'"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 4v6h-6"></path>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
-                重新生成
-              </button>
+              <div class="overlay-actions">
+                <button
+                  type="button"
+                  class="overlay-btn"
+                  @click.stop="regenerateImage(image.index)"
+                  :disabled="image.status === 'retrying'"
+                  title="重新生成此图"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                  重新生成
+                </button>
+                <button
+                  type="button"
+                  class="overlay-btn"
+                  @click.stop="downloadImage(image)"
+                  title="下载此图"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  下载
+                </button>
+              </div>
             </div>
           </div>
 
@@ -98,7 +115,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useGeneratorStore } from '../stores/generator'
+import { useGeneratorStore, type GeneratedImage } from '../stores/generator'
 import { generateImagesPost, regenerateImage as apiRegenerateImage, retryFailedImages as apiRetryFailed, createHistory, updateHistory, getImageUrl } from '../api'
 
 const router = useRouter()
@@ -126,6 +143,19 @@ const getStatusText = (status: string) => {
     retrying: '重试中'
   }
   return texts[status] || '等待中'
+}
+
+/**
+ * 下载单张图片
+ * 与 ResultView 的下载逻辑保持一致，创建临时链接并触发下载
+ */
+function downloadImage(image: GeneratedImage) {
+  if (!image.url) return
+
+  const link = document.createElement('a')
+  link.href = image.url
+  link.download = `rednote_page_${image.index + 1}.png`
+  link.click()
 }
 
 // 重试单张图片（异步并发执行，不阻塞）
@@ -260,6 +290,18 @@ onMounted(async () => {
             // 收集所有生成的图片文件名
             const generatedImages = event.images.filter(img => img !== null)
 
+            // 收集每个图片的候选图片信息
+            const candidatesMap: Record<string, string[]> = {}
+            store.images.forEach(img => {
+              if (img.candidates && img.candidates.length > 0) {
+                // 将完整 URL 转换为文件名
+                candidatesMap[String(img.index)] = img.candidates.map(url => {
+                  const parts = url.split('/')
+                  return parts[parts.length - 1].split('?')[0] // 去掉查询参数
+                })
+              }
+            })
+
             // 确定状态
             let status = 'completed'
             if (hasFailedImages.value) {
@@ -272,7 +314,8 @@ onMounted(async () => {
             await updateHistory(store.recordId, {
               images: {
                 task_id: event.task_id,
-                generated: generatedImages
+                generated: generatedImages,
+                candidates_map: candidatesMap
               },
               status: status,
               thumbnail: coverImage
@@ -336,6 +379,11 @@ onMounted(async () => {
 
 .image-preview:hover .image-overlay {
   opacity: 1;
+}
+
+.overlay-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .overlay-btn {
