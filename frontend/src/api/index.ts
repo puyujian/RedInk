@@ -283,7 +283,8 @@ export async function createImageTask(
   fullOutline: string,
   userImages?: File[],
   userTopic?: string,
-  taskId?: string | null
+  taskId?: string | null,
+  recordId?: string | null
 ): Promise<ImageTaskResponse> {
   // 将用户图片转换为 base64
   let userImagesBase64: string[] = []
@@ -307,6 +308,7 @@ export async function createImageTask(
     full_outline: fullOutline,
     user_images: userImagesBase64.length > 0 ? userImagesBase64 : undefined,
     user_topic: userTopic || '',
+    record_id: recordId || undefined,
   })
 
   return response.data
@@ -628,11 +630,12 @@ export async function generateImagesPost(
   onFinish: (event: FinishEvent) => void,
   onStreamError: (error: Error) => void,
   userImages?: File[],
-  userTopic?: string
+  userTopic?: string,
+  recordId?: string | null
 ): Promise<EventSource | null> {
   try {
     // 创建任务
-    const createResult = await createImageTask(pages, fullOutline, userImages, userTopic, taskId)
+    const createResult = await createImageTask(pages, fullOutline, userImages, userTopic, taskId, recordId)
 
     if (!createResult.success || !createResult.task_id) {
       onStreamError(new Error(createResult.error || '创建图片任务失败'))

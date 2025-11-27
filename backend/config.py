@@ -14,6 +14,9 @@ class Config:
     GOOGLE_CLOUD_API_KEY = os.getenv('GOOGLE_CLOUD_API_KEY')
     OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
 
+    # Flask 请求体大小限制（50MB，用于支持大图片上传）
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB
+
     # 数据库配置（默认使用 SQLite，支持 MySQL）
     DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///redink.db')
 

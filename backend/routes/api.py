@@ -159,12 +159,12 @@ def get_outline_task_status(task_id: str):
 @api_bp.route('/generate', methods=['POST'])
 @login_required
 def create_image_task():
-    """创建图片生成任务（异步）。
+    """创建图片生成任务(异步)。
 
-    请求格式（JSON）:
+    请求格式(JSON):
         {
             "pages": [...],
-            "task_id": "可选，前端自定义 ID",
+            "task_id": "可选,前端自定义 ID",
             "full_outline": "...",
             "user_topic": "...",
             "user_images": ["data:image/png;base64,...", ...]
@@ -173,6 +173,7 @@ def create_image_task():
     响应:
         - 202 Accepted: {"success": true, "task_id": "...", "status": "pending"}
         - 400 Bad Request: 参数错误
+        - 413 Payload Too Large: 请求体过大
         - 500 Internal Error: 创建任务失败
 
     前端通过 GET /api/generate/stream/<task_id> 订阅 SSE 事件。
@@ -187,16 +188,40 @@ def create_image_task():
         full_outline = (data.get('full_outline') or '').strip()
         user_topic = (data.get('user_topic') or '').strip()
         user_images_base64 = data.get('user_images') or []
+        record_id = (data.get('record_id') or '').strip()  # 关联的历史记录 UUID
 
+        # 参数验证
         if not isinstance(pages, list) or not pages:
             return jsonify({
                 "success": False,
                 "error": "pages 参数不能为空"
             }), 400
 
+        # 验证图片数量限制(最多10张)
+        if isinstance(user_images_base64, list) and len(user_images_base64) > 10:
+            return jsonify({
+                "success": False,
+                "error": f"最多只能上传 10 张参考图片,当前上传了 {len(user_images_base64)} 张"
+            }), 400
+
+        # 验证单张图片大小(base64 编码后最大 15MB ≈ 实际图片 11MB)
+        if isinstance(user_images_base64, list):
+            for idx, img_b64 in enumerate(user_images_base64):
+                if img_b64:
+                    # 移除 data URL 前缀
+                    if "," in img_b64:
+                        img_b64 = img_b64.split(",", 1)[1]
+                    # 估算 base64 大小(字节)
+                    img_size_mb = len(img_b64) * 0.75 / (1024 * 1024)  # base64 -> bytes
+                    if img_size_mb > 15:
+                        return jsonify({
+                            "success": False,
+                            "error": f"第 {idx + 1} 张图片过大({img_size_mb:.1f}MB),单张图片不能超过 15MB"
+                        }), 400
+
         total = len(pages)
 
-        # 创建任务状态（高层任务信息）
+        # 创建任务状态(高层任务信息)
         task_id = TaskStore.create_task(
             task_type=TaskType.IMAGE,
             task_id=client_task_id,
@@ -204,16 +229,17 @@ def create_image_task():
             progress_total=total,
         )
 
-        # 初始化图片任务状态（详细页信息、用户参数等）
+        # 初始化图片任务状态(详细页信息、用户参数等)
         ImageTaskStateStore.init_task(
             task_id=task_id,
             pages=pages,
             full_outline=full_outline,
             user_topic=user_topic,
             user_images_base64=user_images_base64,
+            record_id=record_id,
         )
 
-        # 将任务推入图片队列，由 RQ worker 异步执行
+        # 将任务推入图片队列,由 RQ worker 异步执行
         image_queue = get_image_queue()
         image_queue.enqueue(
             generate_images_task,
@@ -222,7 +248,8 @@ def create_image_task():
         )
 
         logger.info(
-            f"图片任务已创建: task_id={task_id}, user_id={user_id}, total_pages={total}"
+            f"图片任务已创建: task_id={task_id}, user_id={user_id}, total_pages={total}, "
+            f"user_images_count={len(user_images_base64) if user_images_base64 else 0}"
         )
 
         return jsonify({

@@ -55,6 +55,7 @@ class ImageTaskStateStore:
         full_outline: str = "",
         user_topic: str = "",
         user_images_base64: Optional[List[str]] = None,
+        record_id: str = "",
         ttl: Optional[int] = None,
     ) -> None:
         """初始化图片任务状态。
@@ -65,6 +66,7 @@ class ImageTaskStateStore:
             full_outline: 完整大纲文本
             user_topic: 用户原始输入
             user_images_base64: 用户参考图片（base64 编码）
+            record_id: 关联的历史记录 UUID（用于实时同步）
             ttl: 过期时间（秒）
         """
         state: Dict[str, Any] = {
@@ -76,6 +78,7 @@ class ImageTaskStateStore:
             "full_outline": full_outline or "",
             "user_topic": user_topic or "",
             "user_images": user_images_base64 or [],
+            "record_id": record_id or "",
         }
         redis_conn = get_redis_connection()
         key = cls._make_key(task_id)
@@ -117,6 +120,7 @@ class ImageTaskStateStore:
         state.setdefault("full_outline", "")
         state.setdefault("user_topic", "")
         state.setdefault("user_images", [])
+        state.setdefault("record_id", "")
         return state
 
     @classmethod

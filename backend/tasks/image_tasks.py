@@ -6,6 +6,9 @@
 
 任务状态通过 TaskStore 管理，进度事件通过 Redis Pub/Sub 发布，
 由 API 层的 SSE 接口转发给前端。
+
+历史记录同步：每张图片生成成功后自动同步到数据库，
+确保用户中途退出时已生成的图片不会丢失。
 """
 
 from __future__ import annotations
@@ -18,9 +21,85 @@ from typing import Any, Dict, List, Optional
 
 from backend.task_queue.task_store import TaskStore, TaskStatus, TaskType
 from backend.services.image import ImageService, ImageTaskStateStore
+from backend.services.history import get_history_service
 from backend.utils.image_compressor import compress_image
 
 logger = logging.getLogger(__name__)
+
+
+def _build_images_payload(task_id: str) -> Dict[str, Any]:
+    """从任务状态构建 images_json 数据结构。
+
+    Args:
+        task_id: 任务 ID
+
+    Returns:
+        符合 HistoryRecord.images_json 格式的字典
+    """
+    state = ImageTaskStateStore.load_state(task_id)
+    if not state:
+        return {"task_id": task_id, "generated": []}
+
+    generated_map = state.get("generated") or {}
+    candidates_map = state.get("candidates") or {}
+
+    # 按索引排序，构建有序列表
+    sorted_keys = sorted(generated_map.keys(), key=lambda k: int(k) if k.isdigit() else 0)
+    generated_list = [generated_map[k] for k in sorted_keys if generated_map.get(k)]
+
+    payload: Dict[str, Any] = {
+        "task_id": task_id,
+        "generated": generated_list,
+    }
+
+    # 如果有候选图片，也一并保存
+    if candidates_map:
+        payload["candidates_map"] = {str(k): v for k, v in candidates_map.items() if v}
+
+    return payload
+
+
+def _sync_history_record(
+    task_id: str,
+    record_id: str,
+    user_id: Optional[int],
+    status: Optional[str] = None,
+    sync_images: bool = True,
+) -> None:
+    """同步图片生成状态到历史记录。
+
+    该函数在图片生成过程中被调用，实时将已生成的图片同步到数据库，
+    确保用户中途退出时数据不会丢失。
+
+    Args:
+        task_id: 任务 ID
+        record_id: 历史记录 UUID
+        user_id: 用户 ID（整数）
+        status: 可选的状态更新（generating/completed/partial）
+        sync_images: 是否同步图片数据
+    """
+    if not record_id or not user_id:
+        return
+
+    try:
+        images_payload = _build_images_payload(task_id) if sync_images else None
+        history_service = get_history_service()
+        history_service.update_record(
+            user_id=user_id,
+            record_id=record_id,
+            images=images_payload,
+            status=status,
+        )
+        logger.debug(
+            f"[图片任务] 历史记录已同步: task_id={task_id}, "
+            f"record_id={record_id}, status={status}"
+        )
+    except Exception as e:
+        # 同步失败不影响主流程，仅记录警告
+        logger.warning(
+            f"[图片任务] 历史记录同步失败: task_id={task_id}, "
+            f"record_id={record_id}, error={e}"
+        )
 
 
 def _decode_base64_images(images_base64: Optional[List[str]]) -> List[bytes]:
@@ -106,6 +185,16 @@ def generate_images_task(task_id: str) -> None:
     full_outline: str = state.get("full_outline") or ""
     user_topic: str = state.get("user_topic") or ""
     user_images_base64: List[str] = state.get("user_images") or []
+    record_id: str = state.get("record_id") or ""
+
+    # 获取用户 ID（用于同步历史记录）
+    task_meta = TaskStore.get_task(task_type, task_id)
+    user_id: Optional[int] = None
+    if task_meta:
+        try:
+            user_id = int(task_meta.get("user_id", 0)) or None
+        except (TypeError, ValueError):
+            pass
 
     total = len(pages)
     if total <= 0:
@@ -126,6 +215,9 @@ def generate_images_task(task_id: str) -> None:
         progress_current=0,
         progress_total=total,
     )
+
+    # 同步历史记录状态为"生成中"
+    _sync_history_record(task_id, record_id, user_id, status="generating", sync_images=False)
 
     # 解码用户参考图片，并压缩以减少内存占用
     user_images_bytes = _decode_base64_images(user_images_base64)
@@ -213,6 +305,9 @@ def generate_images_task(task_id: str) -> None:
                     progress_current=len(generated_images),
                 )
 
+                # 实时同步到历史记录
+                _sync_history_record(task_id, record_id, user_id)
+
                 logger.info(f"[图片任务] 封面生成成功: task_id={task_id}, filename={filename}")
             else:
                 failed_pages.append(cover_page)
@@ -293,6 +388,9 @@ def generate_images_task(task_id: str) -> None:
                                 task_id=task_id,
                                 progress_current=len(generated_images),
                             )
+
+                            # 实时同步到历史记录
+                            _sync_history_record(task_id, record_id, user_id)
                         else:
                             failed_pages.append(page)
                             ImageTaskStateStore.add_failed(task_id, page_index, error or "图片生成失败")
@@ -345,6 +443,10 @@ def generate_images_task(task_id: str) -> None:
             f"success={success_flag}, completed={len(generated_images)}, failed={len(failed_pages)}"
         )
 
+        # 同步最终状态到历史记录
+        final_status = "completed" if success_flag else "partial"
+        _sync_history_record(task_id, record_id, user_id, status=final_status)
+
     except Exception as e:
         logger.error(
             f"[图片任务] 执行异常: task_id={task_id}, error={e}\n{traceback.format_exc()}"
@@ -374,6 +476,9 @@ def generate_images_task(task_id: str) -> None:
             status=TaskStatus.FAILED,
             error=f"图片生成异常: {e}",
         )
+
+        # 异常时也同步已生成的图片（状态为 partial）
+        _sync_history_record(task_id, record_id, user_id, status="partial")
 
 
 __all__ = ["generate_images_task"]

@@ -341,7 +341,9 @@ onMounted(async () => {
       // userImages - 用户上传的参考图片
       store.userImages.length > 0 ? store.userImages : undefined,
       // userTopic - 用户原始输入
-      store.topic
+      store.topic,
+      // recordId - 关联的历史记录 ID，用于实时同步
+      store.recordId || undefined
     )
   } catch (err: any) {
     console.error('创建图片任务失败:', err)
