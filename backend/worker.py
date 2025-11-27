@@ -7,8 +7,10 @@
     python backend/worker.py
 
 环境变量:
-    WORKER_CONCURRENCY: 并发 Worker 数量（默认 4）
+    WORKER_CONCURRENCY: 并发 Worker 数量（默认 4，上限为 CPU 核心数 * 2）
     REDIS_URL: Redis 连接地址
+    WORKER_LOG_LEVEL: 日志级别（默认 INFO，可选 DEBUG/WARNING/ERROR）
+    WORKER_LOG_FILE: 日志文件路径（可选，不设置则仅输出到控制台）
 """
 
 from __future__ import annotations
@@ -61,7 +63,7 @@ def _setup_child_logging(worker_id: int) -> logging.Logger:
     """为子进程配置独立的日志。
 
     Windows spawn 模式下子进程不会继承父进程的 logging 配置，
-    需要在子进程中重新配置。
+    需要在子进程中重新配置。继承父进程的日志级别和文件输出设置。
 
     Args:
         worker_id: Worker 编号
@@ -69,11 +71,20 @@ def _setup_child_logging(worker_id: int) -> logging.Logger:
     Returns:
         配置好的 Logger 实例
     """
+    # 从环境变量读取配置（与主进程保持一致）
+    log_level = os.getenv("WORKER_LOG_LEVEL", "INFO").upper()
+    log_file = os.getenv("WORKER_LOG_FILE")
+
+    handlers: List[logging.Handler] = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+
     # 重新配置日志（子进程独立配置）
     logging.basicConfig(
-        level=logging.INFO,
+        level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
+        handlers=handlers,
         force=True,  # Python 3.8+ 允许重新配置
     )
     return logging.getLogger(f"worker-{worker_id}")
@@ -267,6 +278,9 @@ def main() -> None:
         # 构建 sentinel -> worker index 映射，用于高效监听
         sentinel_index_map = {p.sentinel: i for i, p in enumerate(_worker_processes)}
 
+        # 记录节流期间是否已警告，避免重复日志刷屏
+        throttle_warned: List[bool] = [False for _ in range(concurrency)]
+
         # 主进程等待子进程，使用 sentinel 监听替代轮询
         while not _shutdown_requested:
             # 使用 mp_wait 监听进程退出事件，比 sleep 轮询更高效
@@ -281,11 +295,19 @@ def main() -> None:
                 if not p.is_alive() and p.exitcode is not None:
                     # 重启节流：避免短时间内多次重启
                     now = time.time()
-                    if now - last_restart_ts[i] < _RESTART_BACKOFF_SECONDS:
-                        logger.warning(
-                            f"⚠ Worker {i} 短时间内多次崩溃，延后重启以避免重启风暴"
-                        )
+                    time_since_last = now - last_restart_ts[i]
+                    if time_since_last < _RESTART_BACKOFF_SECONDS:
+                        # 仅首次警告，避免日志刷屏
+                        if not throttle_warned[i]:
+                            remaining = _RESTART_BACKOFF_SECONDS - time_since_last
+                            logger.warning(
+                                f"⚠ Worker {i} 短时间内多次崩溃，{remaining:.1f}s 后重启"
+                            )
+                            throttle_warned[i] = True
                         continue
+
+                    # 重置节流警告标志
+                    throttle_warned[i] = False
                     last_restart_ts[i] = now
 
                     # 记录退出状态
