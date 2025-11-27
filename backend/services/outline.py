@@ -64,12 +64,15 @@ class OutlineService:
             if images and len(images) > 0:
                 prompt += f"\n\n注意：用户提供了 {len(images)} 张参考图片，请在生成大纲时考虑这些图片的内容和风格。这些图片可能是产品图、个人照片或场景图，请根据图片内容来优化大纲，使生成的内容与图片相关联。"
 
+            # 使用流式传输避免 524 超时
+            # stream=True 会持续接收数据，防止中间网关超时
             outline_text = self.client.generate_text(
                 prompt=prompt,
                 model="gemini-3-pro-preview",
                 temperature=1.0,
                 max_output_tokens=65535,
-                images=images
+                images=images,
+                stream=True  # 启用流式传输
             )
 
             pages = self._parse_outline(outline_text)
