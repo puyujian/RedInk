@@ -23,7 +23,7 @@ from backend.auth import (
     get_current_user,
 )
 from backend.db import get_db
-from backend.models import User, HistoryRecord
+from backend.models import User, HistoryRecord, RegistrationSetting
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,8 @@ def register():
             "username": "用户名",
             "email": "邮箱（可选）",
             "password": "密码",
-            "client_id": "前端匿名 UUID（可选，用于绑定历史数据）"
+            "client_id": "前端匿名 UUID（可选，用于绑定历史数据）",
+            "invite_code": "邀请码（如果需要）"
         }
 
     响应:
@@ -66,34 +67,58 @@ def register():
         email = (data.get('email') or '').strip() or None
         password = data.get('password') or ''
         client_id = data.get('client_id') or request.headers.get('X-User-Id')
-
-        # 验证输入
-        if not username:
-            return jsonify({
-                'success': False,
-                'error': '用户名不能为空'
-            }), 400
-
-        if len(username) < 3 or len(username) > 50:
-            return jsonify({
-                'success': False,
-                'error': '用户名长度必须在 3-50 个字符之间'
-            }), 400
-
-        if not password:
-            return jsonify({
-                'success': False,
-                'error': '密码不能为空'
-            }), 400
-
-        if len(password) < 6:
-            return jsonify({
-                'success': False,
-                'error': '密码长度至少为 6 个字符'
-            }), 400
+        invite_code = (data.get('invite_code') or '').strip()
 
         db = get_db()
         try:
+            # 检查注册配置
+            reg_setting = db.query(RegistrationSetting).filter(RegistrationSetting.id == 1).first()
+            if reg_setting:
+                # 检查注册是否开启
+                if not reg_setting.enabled:
+                    return jsonify({
+                        'success': False,
+                        'error': '注册功能已关闭'
+                    }), 403
+
+                # 检查邀请码
+                if reg_setting.invite_required:
+                    if not invite_code:
+                        return jsonify({
+                            'success': False,
+                            'error': '需要邀请码才能注册'
+                        }), 400
+                    if reg_setting.invite_code and invite_code != reg_setting.invite_code:
+                        return jsonify({
+                            'success': False,
+                            'error': '邀请码无效'
+                        }), 400
+
+            # 验证输入
+            if not username:
+                return jsonify({
+                    'success': False,
+                    'error': '用户名不能为空'
+                }), 400
+
+            if len(username) < 3 or len(username) > 50:
+                return jsonify({
+                    'success': False,
+                    'error': '用户名长度必须在 3-50 个字符之间'
+                }), 400
+
+            if not password:
+                return jsonify({
+                    'success': False,
+                    'error': '密码不能为空'
+                }), 400
+
+            if len(password) < 6:
+                return jsonify({
+                    'success': False,
+                    'error': '密码长度至少为 6 个字符'
+                }), 400
+
             # 检查用户名是否已存在
             existing_user = db.query(User).filter(User.username == username).first()
             if existing_user:
@@ -111,11 +136,15 @@ def register():
                         'error': '邮箱已被使用'
                     }), 400
 
+            # 确定用户角色
+            default_role = reg_setting.default_role if reg_setting else 'user'
+
             # 创建用户
             user = User(
                 username=username,
                 email=email,
                 password_hash=hash_password(password),
+                role=default_role,
                 client_id=client_id,
             )
             db.add(user)

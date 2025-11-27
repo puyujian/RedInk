@@ -428,3 +428,173 @@ class RolePermission(Base):
 
     def __repr__(self) -> str:
         return f"<RolePermission(role_id={self.role_id}, permission_id={self.permission_id})>"
+
+
+# ============================================================================
+# 后台管理系统模型
+# ============================================================================
+
+class ConfigVersion(Base):
+    """配置版本历史表"""
+    __tablename__ = "config_versions"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    config_name: Mapped[str] = mapped_column(
+        sa.String(128),
+        nullable=False,
+        index=True,
+        comment="配置名称（如 image_providers, registration）"
+    )
+    version: Mapped[int] = mapped_column(
+        sa.Integer,
+        nullable=False,
+        comment="版本号"
+    )
+    content: Mapped[str] = mapped_column(
+        sa.Text,
+        nullable=False,
+        comment="配置内容（YAML 或 JSON 文本）"
+    )
+    diff_summary: Mapped[Optional[str]] = mapped_column(
+        sa.Text,
+        comment="变更摘要"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        comment="创建时间"
+    )
+    created_by: Mapped[Optional[int]] = mapped_column(
+        sa.Integer,
+        sa.ForeignKey("users.id", ondelete="SET NULL"),
+        comment="创建者用户 ID"
+    )
+
+    # 唯一约束：同一配置名下版本号唯一
+    __table_args__ = (
+        sa.UniqueConstraint("config_name", "version", name="uq_config_name_version"),
+        sa.Index("idx_config_versions_name_version", "config_name", "version"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ConfigVersion(config_name='{self.config_name}', version={self.version})>"
+
+
+class RegistrationSetting(Base):
+    """注册配置表（单行配置）"""
+    __tablename__ = "registration_settings"
+
+    id: Mapped[int] = mapped_column(
+        sa.Integer,
+        primary_key=True,
+        default=1,
+        comment="固定为 1（单行配置）"
+    )
+    enabled: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        default=True,
+        comment="是否启用注册"
+    )
+    default_role: Mapped[str] = mapped_column(
+        sa.String(32),
+        nullable=False,
+        default="user",
+        comment="新用户默认角色"
+    )
+    invite_required: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        comment="是否需要邀请码"
+    )
+    invite_code: Mapped[Optional[str]] = mapped_column(
+        sa.String(128),
+        comment="有效的邀请码（为空表示不限制）"
+    )
+    email_verification_required: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        comment="是否需要邮箱验证"
+    )
+    rate_limit_per_hour: Mapped[int] = mapped_column(
+        sa.Integer,
+        nullable=False,
+        default=0,
+        comment="每小时注册限制（0 表示不限制）"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        comment="更新时间"
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        sa.Integer,
+        sa.ForeignKey("users.id", ondelete="SET NULL"),
+        comment="更新者用户 ID"
+    )
+
+    def __repr__(self) -> str:
+        return f"<RegistrationSetting(enabled={self.enabled}, invite_required={self.invite_required})>"
+
+
+class AuditLog(Base):
+    """审计日志表"""
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    actor_id: Mapped[Optional[int]] = mapped_column(
+        sa.Integer,
+        sa.ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+        comment="操作者用户 ID"
+    )
+    actor_username: Mapped[Optional[str]] = mapped_column(
+        sa.String(128),
+        comment="操作者用户名（冗余存储，防止用户删除后丢失）"
+    )
+    action: Mapped[str] = mapped_column(
+        sa.String(128),
+        nullable=False,
+        index=True,
+        comment="操作类型（如 create_user, update_config）"
+    )
+    resource_type: Mapped[str] = mapped_column(
+        sa.String(128),
+        nullable=False,
+        index=True,
+        comment="资源类型（如 user, config, history_record）"
+    )
+    resource_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(128),
+        comment="资源 ID"
+    )
+    details: Mapped[Optional[dict]] = mapped_column(
+        sa.JSON,
+        comment="操作详情（JSON 格式）"
+    )
+    ip_address: Mapped[Optional[str]] = mapped_column(
+        sa.String(64),
+        comment="操作者 IP 地址"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        index=True,
+        comment="操作时间"
+    )
+
+    # 复合索引
+    __table_args__ = (
+        sa.Index("idx_audit_logs_actor_created", "actor_id", "created_at"),
+        sa.Index("idx_audit_logs_action_created", "action", "created_at"),
+        sa.Index("idx_audit_logs_resource", "resource_type", "resource_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AuditLog(id={self.id}, action='{self.action}', resource='{self.resource_type}')>"

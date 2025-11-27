@@ -6,6 +6,16 @@ import GenerateView from '../views/GenerateView.vue'
 import ResultView from '../views/ResultView.vue'
 import HistoryView from '../views/HistoryView.vue'
 
+// 管理后台组件（懒加载）
+const AdminLayout = () => import('../views/admin/AdminLayout.vue')
+const AdminDashboard = () => import('../views/admin/AdminDashboard.vue')
+const AdminUsers = () => import('../views/admin/AdminUsers.vue')
+const AdminRecords = () => import('../views/admin/AdminRecords.vue')
+const AdminImages = () => import('../views/admin/AdminImages.vue')
+const AdminConfig = () => import('../views/admin/AdminConfig.vue')
+const AdminRegistration = () => import('../views/admin/AdminRegistration.vue')
+const AdminAuditLogs = () => import('../views/admin/AdminAuditLogs.vue')
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -33,6 +43,49 @@ const router = createRouter({
       path: '/history',
       name: 'history',
       component: HistoryView
+    },
+    // 管理后台路由
+    {
+      path: '/admin',
+      component: AdminLayout,
+      meta: { requiresAdmin: true },
+      children: [
+        {
+          path: '',
+          name: 'admin-dashboard',
+          component: AdminDashboard
+        },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: AdminUsers
+        },
+        {
+          path: 'records',
+          name: 'admin-records',
+          component: AdminRecords
+        },
+        {
+          path: 'images',
+          name: 'admin-images',
+          component: AdminImages
+        },
+        {
+          path: 'config',
+          name: 'admin-config',
+          component: AdminConfig
+        },
+        {
+          path: 'registration',
+          name: 'admin-registration',
+          component: AdminRegistration
+        },
+        {
+          path: 'audit-logs',
+          name: 'admin-audit-logs',
+          component: AdminAuditLogs
+        }
+      ]
     }
   ]
 })
@@ -40,13 +93,30 @@ const router = createRouter({
 // 需要登录的路由
 const authRequiredRoutes = ['outline', 'generate', 'result', 'history']
 
-// 路由守卫：检查登录状态
+// 路由守卫：检查登录状态和管理员权限
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
   // 首次加载时初始化认证状态
   if (!authStore.initializing && !authStore.isAuthenticated && !authStore.user) {
     await authStore.initAuth()
+  }
+
+  // 检查是否需要管理员权限
+  if (to.matched.some(record => record.meta.requiresAdmin)) {
+    if (!authStore.isAuthenticated) {
+      // 未登录，跳转到首页并提示登录
+      next({
+        name: 'home',
+        query: { redirect: to.fullPath, login_required: '1' }
+      })
+      return
+    }
+    if (!authStore.isAdmin) {
+      // 已登录但非管理员，跳转到首页
+      next({ name: 'home' })
+      return
+    }
   }
 
   // 检查是否需要登录

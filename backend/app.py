@@ -6,6 +6,7 @@ from backend.config import Config
 from backend.db import init_db
 from backend.routes.api import api_bp
 from backend.routes.auth import auth_bp
+from backend.routes.admin import admin_bp
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,13 @@ def create_app():
     # 注册蓝图
     app.register_blueprint(api_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_bp)
 
     @app.route('/')
     def index():
         return {
             "message": "RedInk AI图文生成器 API",
-            "version": "0.2.0",
+            "version": "0.3.0",
             "endpoints": {
                 "health": "/api/health",
                 "auth": {
@@ -68,7 +70,16 @@ def create_app():
                 "outline": "POST /api/outline",
                 "generate": "POST /api/generate",
                 "images": "GET /api/images/<filename>",
-                "history": "GET /api/history"
+                "history": "GET /api/history",
+                "admin": {
+                    "users": "GET/POST /api/admin/users",
+                    "records": "GET /api/admin/records",
+                    "images": "GET /api/admin/images",
+                    "config": "GET/PUT /api/admin/config/image-providers",
+                    "registration": "GET/PUT /api/admin/registration",
+                    "audit_logs": "GET /api/admin/audit-logs",
+                    "dashboard": "GET /api/admin/dashboard/stats"
+                }
             }
         }
 
