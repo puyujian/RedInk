@@ -620,6 +620,7 @@ onMounted(() => {
 /* 状态徽章 */
 .status-badge {
   display: inline-block;
+  position: static;  /* 覆盖全局 history.css 中的 position: absolute */
   padding: 4px 12px;
   border-radius: 20px;
   font-size: 12px;

@@ -8,8 +8,23 @@ from .base import ImageGeneratorBase
 from ..utils.image_compressor import compress_image
 
 
+class SensitiveWordsError(Exception):
+    """敏感词检测异常，不可重试。
+
+    当图片生成接口检测到敏感词时抛出此异常，该异常会跳过所有重试机制，
+    直接返回错误信息到前端，提示用户重新生成大纲。
+    """
+
+    def __init__(self, message: str = "文案中有敏感词，请重新生成大纲！"):
+        super().__init__(message)
+        self.retryable = False
+
+
 def retry_on_error(max_retries: int = 3, base_delay: float = 2):
-    """错误重试装饰器"""
+    """错误重试装饰器
+
+    对于大部分异常会进行重试，但对于 SensitiveWordsError 会直接抛出，不进行重试。
+    """
     def decorator(func):
         def wrapper(*args, **kwargs):
             last_error = None
@@ -17,6 +32,9 @@ def retry_on_error(max_retries: int = 3, base_delay: float = 2):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
+                    # 敏感词错误不可重试，直接抛出
+                    if isinstance(e, SensitiveWordsError):
+                        raise
                     last_error = e
                     if attempt < max_retries - 1:
                         delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
@@ -50,6 +68,47 @@ class ImageApiGenerator(ImageGeneratorBase):
     def get_supported_aspect_ratios(self) -> List[str]:
         """获取支持的宽高比"""
         return ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+
+    def _check_sensitive_words_error(self, response: requests.Response) -> None:
+        """检测响应中是否包含敏感词错误。
+
+        检测策略：
+        1. 解析响应 JSON 中的 error.type / error.code 字段
+        2. 检查 error.message 是否包含关键字
+        3. 兜底：检查整个响应文本是否包含关键字
+
+        注意：所有比较均使用小写以避免大小写不一致问题。
+
+        Args:
+            response: HTTP 响应对象
+
+        Raises:
+            SensitiveWordsError: 当检测到敏感词错误时抛出
+        """
+        sensitive_keyword = "sensitive_words_detected"
+
+        try:
+            body = response.json()
+        except ValueError:
+            # JSON 解析失败，检查原始文本（大小写不敏感）
+            if sensitive_keyword in response.text.lower():
+                raise SensitiveWordsError()
+            return
+
+        # 检查 error 字段
+        error_info = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error_info, dict):
+            error_type = error_info.get("type") or error_info.get("code") or ""
+            if str(error_type).lower() == sensitive_keyword:
+                raise SensitiveWordsError()
+
+            error_message = error_info.get("message", "")
+            if sensitive_keyword in str(error_message).lower():
+                raise SensitiveWordsError()
+
+        # 兜底：检查整个响应体（大小写不敏感）
+        if sensitive_keyword in str(body).lower():
+            raise SensitiveWordsError()
 
     @retry_on_error(max_retries=3, base_delay=2)
     def generate_image(
@@ -141,6 +200,9 @@ class ImageApiGenerator(ImageGeneratorBase):
             json=payload,
             timeout=300
         )
+
+        # 检测敏感词错误（优先处理，不可重试）
+        self._check_sensitive_words_error(response)
 
         if response.status_code != 200:
             raise Exception(f"API 错误 {response.status_code}: {response.text[:500]}")

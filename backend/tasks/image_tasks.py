@@ -315,7 +315,7 @@ def generate_images_task(task_id: str) -> None:
             })
 
             # 调用底层单图生成函数
-            index, success, filename, error, candidates = image_service._generate_single_image(
+            index, success, filename, error, candidates, retryable = image_service._generate_single_image(
                 cover_page,
                 task_id,
                 reference_image=None,
@@ -366,13 +366,13 @@ def generate_images_task(task_id: str) -> None:
                 logger.info(f"[图片任务] 封面生成成功: task_id={task_id}, filename={filename}")
             else:
                 failed_pages.append(cover_page)
-                ImageTaskStateStore.add_failed(task_id, cover_index, error or "封面生成失败")
+                ImageTaskStateStore.add_failed(task_id, cover_index, error or "封面生成失败", retryable)
 
                 _publish_event(task_id, "error", {
                     "index": cover_index,
                     "status": "error",
                     "message": error or "封面生成失败",
-                    "retryable": True,
+                    "retryable": retryable,
                     "phase": "cover",
                 })
 
@@ -421,7 +421,7 @@ def generate_images_task(task_id: str) -> None:
                     page_index = page.get("index")
 
                     try:
-                        index, success, filename, error, candidates = future.result()
+                        index, success, filename, error, candidates, retryable = future.result()
 
                         if success and filename:
                             generated_images.append(filename)
@@ -452,19 +452,19 @@ def generate_images_task(task_id: str) -> None:
                             _sync_history_record(task_id, record_id, user_id)
                         else:
                             failed_pages.append(page)
-                            ImageTaskStateStore.add_failed(task_id, page_index, error or "图片生成失败")
+                            ImageTaskStateStore.add_failed(task_id, page_index, error or "图片生成失败", retryable)
 
                             _publish_event(task_id, "error", {
                                 "index": page_index,
                                 "status": "error",
                                 "message": error or "图片生成失败",
-                                "retryable": True,
+                                "retryable": retryable,
                                 "phase": "content",
                             })
 
                     except Exception as e:
                         failed_pages.append(page)
-                        ImageTaskStateStore.add_failed(task_id, page_index, str(e))
+                        ImageTaskStateStore.add_failed(task_id, page_index, str(e), retryable=True)
 
                         _publish_event(task_id, "error", {
                             "index": page_index,

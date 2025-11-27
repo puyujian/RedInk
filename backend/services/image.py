@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Generator, List, Optional, Tuple
 from backend.config import Config
 from backend.generators.factory import ImageGeneratorFactory
+from backend.generators.image_api import SensitiveWordsError
 from backend.utils.image_compressor import compress_image
 from backend.task_queue import get_redis_connection
 
@@ -160,14 +161,25 @@ class ImageTaskStateStore:
         cls.save_state(task_id, state)
 
     @classmethod
-    def add_failed(cls, task_id: str, index: int, error: str) -> None:
-        """记录单页生成失败信息。"""
+    def add_failed(cls, task_id: str, index: int, error: str, retryable: bool = True) -> None:
+        """记录单页生成失败信息。
+
+        Args:
+            task_id: 任务 ID
+            index: 页面索引
+            error: 错误信息
+            retryable: 是否可重试（默认 True，敏感词错误为 False）
+        """
         state = cls.load_state(task_id)
         if not state:
             logger.warning(f"无法记录失败信息，任务状态不存在: task_id={task_id}")
             return
 
-        state["failed"][str(index)] = error
+        # 存储格式: {"message": "错误信息", "retryable": bool}
+        state["failed"][str(index)] = {
+            "message": error,
+            "retryable": retryable,
+        }
         cls.save_state(task_id, state)
 
     @classmethod
@@ -311,7 +323,7 @@ class ImageService:
         full_outline: str = "",
         user_images: Optional[List[bytes]] = None,
         user_topic: str = ""
-    ) -> Tuple[int, bool, Optional[str], Optional[str], Optional[List[str]]]:
+    ) -> Tuple[int, bool, Optional[str], Optional[str], Optional[List[str]], bool]:
         """
         生成单张图片（带自动重试），支持多图候选
 
@@ -325,8 +337,9 @@ class ImageService:
             user_topic: 用户原始输入
 
         Returns:
-            (index, success, filename, error_message, candidate_filenames)
+            (index, success, filename, error_message, candidate_filenames, retryable)
             - candidate_filenames: 所有候选图片的文件名列表（包含主图片）
+            - retryable: 失败时是否可重试（敏感词错误不可重试）
         """
         index = page["index"]
         page_type = page["type"]
@@ -356,7 +369,7 @@ class ImageService:
                     # 保存单张图片
                     filename = f"{task_id}_{index}.png"
                     self._save_image(image_data, filename)
-                    return (index, True, filename, None, [filename])
+                    return (index, True, filename, None, [filename], True)
 
                 elif self.provider_config.get('type') == 'image_api':
                     # Image API 支持多张参考图片
@@ -376,7 +389,7 @@ class ImageService:
                     # 保存单张图片
                     filename = f"{task_id}_{index}.png"
                     self._save_image(image_data, filename)
-                    return (index, True, filename, None, [filename])
+                    return (index, True, filename, None, [filename], True)
 
                 else:
                     # OpenAI 兼容接口 - 尝试使用多图候选方法
@@ -391,7 +404,7 @@ class ImageService:
                         candidate_filenames = self._save_candidate_images(
                             result["candidates"], task_id, index
                         )
-                        return (index, True, candidate_filenames[0], None, candidate_filenames)
+                        return (index, True, candidate_filenames[0], None, candidate_filenames, True)
                     else:
                         # 回退到单图方法
                         image_data = self.generator.generate_image(
@@ -402,20 +415,25 @@ class ImageService:
                         )
                         filename = f"{task_id}_{index}.png"
                         self._save_image(image_data, filename)
-                        return (index, True, filename, None, [filename])
+                        return (index, True, filename, None, [filename], True)
 
             except Exception as e:
                 error_msg = str(e)
+                # 敏感词错误不可重试，立即返回
+                is_sensitive_error = isinstance(e, SensitiveWordsError)
                 print(f"[生成失败] 第 {index + 1} 页, 尝试 {attempt + 1}/{max_retries}: {error_msg[:100]}")
+
+                if is_sensitive_error:
+                    return (index, False, None, error_msg, None, False)
 
                 if attempt < max_retries - 1:
                     # 等待后重试
                     time.sleep(2 ** attempt)
                     continue
 
-                return (index, False, None, error_msg, None)
+                return (index, False, None, error_msg, None, True)
 
-        return (index, False, None, "超过最大重试次数", None)
+        return (index, False, None, "超过最大重试次数", None, True)
 
     def generate_images(
         self,
@@ -492,7 +510,7 @@ class ImageService:
             }
 
             # 生成封面（使用用户上传的图片作为参考）
-            index, success, filename, error, candidates = self._generate_single_image(
+            index, success, filename, error, candidates, retryable = self._generate_single_image(
                 cover_page, task_id, reference_image=None, full_outline=full_outline,
                 user_images=compressed_user_images, user_topic=user_topic
             )
@@ -528,7 +546,10 @@ class ImageService:
                 }
             else:
                 failed_pages.append(cover_page)
-                self._task_states[task_id]["failed"][index] = error
+                self._task_states[task_id]["failed"][index] = {
+                    "message": error,
+                    "retryable": retryable,
+                }
 
                 yield {
                     "event": "error",
@@ -536,7 +557,7 @@ class ImageService:
                         "index": index,
                         "status": "error",
                         "message": error,
-                        "retryable": True,
+                        "retryable": retryable,
                         "phase": "cover"
                     }
                 }
@@ -588,7 +609,7 @@ class ImageService:
                 for future in as_completed(future_to_page):
                     page = future_to_page[future]
                     try:
-                        index, success, filename, error, candidates = future.result()
+                        index, success, filename, error, candidates, retryable = future.result()
 
                         if success:
                             generated_images.append(filename)
@@ -612,7 +633,10 @@ class ImageService:
                             }
                         else:
                             failed_pages.append(page)
-                            self._task_states[task_id]["failed"][index] = error
+                            self._task_states[task_id]["failed"][index] = {
+                                "message": error,
+                                "retryable": retryable,
+                            }
 
                             yield {
                                 "event": "error",
@@ -620,7 +644,7 @@ class ImageService:
                                     "index": index,
                                     "status": "error",
                                     "message": error,
-                                    "retryable": True,
+                                    "retryable": retryable,
                                     "phase": "content"
                                 }
                             }
@@ -628,7 +652,10 @@ class ImageService:
                     except Exception as e:
                         failed_pages.append(page)
                         error_msg = str(e)
-                        self._task_states[task_id]["failed"][page["index"]] = error_msg
+                        self._task_states[task_id]["failed"][page["index"]] = {
+                            "message": error_msg,
+                            "retryable": True,
+                        }
 
                         yield {
                             "event": "error",
@@ -678,7 +705,7 @@ class ImageService:
             reference_image = self._task_states[task_id].get("cover_image")
 
         # 生成图片
-        index, success, filename, error = self._generate_single_image(
+        index, success, filename, error, _, retryable = self._generate_single_image(
             page, task_id, reference_image
         )
 
@@ -699,7 +726,7 @@ class ImageService:
                 "success": False,
                 "index": index,
                 "error": error,
-                "retryable": True
+                "retryable": retryable
             }
 
     def retry_failed_images(
@@ -756,7 +783,7 @@ class ImageService:
             for future in as_completed(future_to_page):
                 page = future_to_page[future]
                 try:
-                    index, success, filename, error = future.result()
+                    index, success, filename, error, _, retryable = future.result()
 
                     if success:
                         success_count += 1
@@ -781,7 +808,7 @@ class ImageService:
                                 "index": index,
                                 "status": "error",
                                 "message": error,
-                                "retryable": True
+                                "retryable": retryable
                             }
                         }
 

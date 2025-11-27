@@ -414,7 +414,14 @@ def stream_image_task(task_id: str):
 
                     # 补发失败的页面
                     for index_key in sorted(failed.keys(), key=sort_index):
-                        message = failed.get(index_key) or "图片生成失败"
+                        failed_info = failed.get(index_key)
+                        # 兼容两种格式：字符串（旧）和字典（新）
+                        if isinstance(failed_info, dict):
+                            message = failed_info.get("message") or "图片生成失败"
+                            retryable = failed_info.get("retryable", True)
+                        else:
+                            message = failed_info or "图片生成失败"
+                            retryable = True  # 旧格式默认可重试
 
                         try:
                             index = int(index_key)
@@ -425,7 +432,7 @@ def stream_image_task(task_id: str):
                             "index": index,
                             "status": "error",
                             "message": message,
-                            "retryable": True,
+                            "retryable": retryable,
                             "phase": get_phase(index_key, page_type_map),
                         }
 
@@ -559,10 +566,19 @@ def get_image_task_status(task_id: str):
                         "candidates": [f"/api/images/{f}" for f in candidate_files],
                     })
                 elif key in failed:
+                    # 兼容两种格式：字符串（旧）和字典（新）
+                    failed_info = failed[key]
+                    if isinstance(failed_info, dict):
+                        error_message = failed_info.get("message") or "图片生成失败"
+                        retryable = failed_info.get("retryable", True)
+                    else:
+                        error_message = failed_info or "图片生成失败"
+                        retryable = True  # 旧格式默认可重试
                     images_summary.append({
                         "index": index,
                         "status": "error",
-                        "error": failed[key],
+                        "error": error_message,
+                        "retryable": retryable,
                     })
                 else:
                     images_summary.append({
