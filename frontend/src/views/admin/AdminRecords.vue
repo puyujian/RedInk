@@ -36,8 +36,8 @@
       </div>
     </div>
 
-    <!-- 记录表格 -->
-    <div class="table-container">
+    <!-- 桌面端表格视图 -->
+    <div class="table-container desktop-only">
       <table class="data-table">
         <thead>
           <tr>
@@ -116,6 +116,78 @@
 
       <div v-if="loading" class="loading-overlay">
         <div class="loading-spinner"></div>
+      </div>
+    </div>
+
+    <!-- 移动端卡片视图 -->
+    <div class="mobile-cards mobile-only">
+      <div
+        v-for="record in records"
+        :key="record.id"
+        class="record-card"
+        :class="{ selected: selectedIds.includes(record.id) }"
+        @click="toggleSelect(record.id)"
+      >
+        <div class="card-checkbox">
+          <input
+            type="checkbox"
+            :checked="selectedIds.includes(record.id)"
+            @click.stop
+            @change="toggleSelect(record.id)"
+          />
+        </div>
+        <div class="card-header">
+          <img
+            v-if="record.thumbnail_url"
+            :src="record.thumbnail_url"
+            class="card-thumbnail"
+            alt="缩略图"
+          />
+          <div v-else class="card-thumbnail-placeholder">📄</div>
+          <div class="card-title-section">
+            <div class="card-title">{{ record.title }}</div>
+            <div class="card-subtitle">
+              <span v-if="record.user">{{ record.user.username }}</span>
+              <span v-else class="text-muted">匿名</span>
+              <span class="separator">·</span>
+              <span>{{ record.page_count }} 页</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-meta">
+            <span :class="['status-badge', `status-${record.status}`]">
+              {{ statusLabels[record.status] || record.status }}
+            </span>
+            <span class="card-date">{{ formatDateShort(record.created_at) }}</span>
+          </div>
+        </div>
+        <div class="card-actions">
+          <button
+            class="btn-card-action btn-view"
+            @click.stop="viewRecord(record)"
+          >
+            👁️ 详情
+          </button>
+          <button
+            class="btn-card-action btn-delete"
+            @click.stop="confirmDelete(record)"
+          >
+            🗑️ 删除
+          </button>
+        </div>
+      </div>
+
+      <!-- 移动端空状态 -->
+      <div v-if="records.length === 0 && !loading" class="empty-state-mobile">
+        <span class="empty-icon">📝</span>
+        <span>暂无记录数据</span>
+      </div>
+
+      <!-- 移动端加载状态 -->
+      <div v-if="loading" class="loading-container-mobile">
+        <div class="loading-spinner"></div>
+        <span>加载中...</span>
       </div>
     </div>
 
@@ -369,6 +441,16 @@ function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatDateShort(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -1070,5 +1152,371 @@ onMounted(() => {
   font-size: 12px;
   color: #d1d5db;
   margin-top: 4px;
+}
+
+/* ==================== 移动端视图切换 ==================== */
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
+/* ==================== 移动端卡片样式 ==================== */
+.mobile-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.record-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: relative;
+  transition: all 0.2s;
+}
+
+.record-card.selected {
+  box-shadow: 0 0 0 2px #667eea;
+  background: #f8f9ff;
+}
+
+.card-checkbox {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+}
+
+.card-checkbox input {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.card-header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.card-thumbnail {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.card-thumbnail-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.card-title-section {
+  flex: 1;
+  min-width: 0;
+  padding-right: 30px;
+}
+
+.card-title {
+  font-weight: 600;
+  color: #1a1a2e;
+  font-size: 15px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.card-subtitle .separator {
+  margin: 0 6px;
+}
+
+.card-body {
+  margin-bottom: 12px;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-date {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn-card-action {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.btn-card-action.btn-view {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.btn-card-action.btn-view:hover {
+  background: #c7d2fe;
+}
+
+.btn-card-action.btn-delete {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-card-action.btn-delete:hover {
+  background: #fecaca;
+}
+
+.empty-state-mobile {
+  text-align: center;
+  padding: 60px 20px;
+  color: #9ca3af;
+}
+
+.empty-state-mobile .empty-icon {
+  display: block;
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.loading-container-mobile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 20px;
+  gap: 16px;
+  color: #6b7280;
+}
+
+/* ==================== 响应式布局 ==================== */
+
+/* 平板适配 */
+@media (max-width: 1024px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .toolbar-left {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-right {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .modal-lg {
+    width: 90vw;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 视图切换 */
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: block !important;
+  }
+
+  /* 工具栏 */
+  .toolbar-left {
+    gap: 8px;
+  }
+
+  .search-input {
+    width: 100%;
+    flex: none;
+    order: 1;
+  }
+
+  .filter-select {
+    flex: 1;
+    min-width: 0;
+    order: 2;
+  }
+
+  .filter-input {
+    width: 80px;
+    order: 3;
+  }
+
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .toolbar-right .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 分页 */
+  .pagination {
+    gap: 8px;
+  }
+
+  .btn-page {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .page-info {
+    font-size: 13px;
+  }
+
+  /* 弹窗底部抽屉样式 */
+  .modal-overlay {
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 85vh;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 16px 20px;
+  }
+
+  .modal-footer {
+    padding: 12px 20px 20px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 详情弹窗 */
+  .detail-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .images-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .outline-page-card {
+    padding: 12px;
+  }
+
+  .outline-page-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+  }
+
+  .outline-page-content {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* 错误提示 */
+  .error-toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    padding: 14px 16px;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .record-card {
+    padding: 14px;
+  }
+
+  .card-thumbnail,
+  .card-thumbnail-placeholder {
+    width: 48px;
+    height: 48px;
+  }
+
+  .card-thumbnail-placeholder {
+    font-size: 20px;
+  }
+
+  .card-title {
+    font-size: 14px;
+  }
+
+  .card-subtitle {
+    font-size: 12px;
+  }
+
+  .btn-card-action {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .images-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 </style>

@@ -709,4 +709,202 @@ input:disabled + .slider {
   background: #d1fae5;
   color: #059669;
 }
+
+/* ==================== 响应式布局 ==================== */
+
+/* 平板适配 */
+@media (max-width: 1024px) {
+  .admin-registration {
+    max-width: 100%;
+  }
+
+  .modal-lg {
+    width: 90vw;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 卡片头部 */
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+  }
+
+  .card-header .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 表单区域 */
+  .settings-form {
+    padding: 16px 20px;
+  }
+
+  .form-group {
+    padding: 16px 0;
+  }
+
+  /* 表单行：垂直堆叠 */
+  .form-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .form-label {
+    flex: none;
+  }
+
+  .form-label > span:first-child {
+    font-size: 14px;
+  }
+
+  .form-hint {
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  /* 开关靠左对齐 */
+  .switch {
+    align-self: flex-start;
+  }
+
+  /* 表单控件全宽 */
+  .form-select {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .form-input {
+    width: 100%;
+  }
+
+  .form-input-sm {
+    width: 100%;
+  }
+
+  /* 输入组 */
+  .input-group {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .input-group .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 卡片底部 */
+  .card-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 16px 20px;
+  }
+
+  .footer-info {
+    text-align: center;
+    font-size: 12px;
+  }
+
+  .card-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 弹窗底部抽屉样式 */
+  .modal-overlay {
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 85vh;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 16px 20px;
+  }
+
+  /* 历史列表 */
+  .history-item {
+    padding: 14px;
+  }
+
+  .history-action {
+    font-size: 14px;
+  }
+
+  .history-meta {
+    font-size: 12px;
+  }
+
+  .history-details pre {
+    font-size: 11px;
+    padding: 10px;
+  }
+
+  /* Toast */
+  .toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    padding: 14px 16px;
+    font-size: 13px;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .card-header h3 {
+    font-size: 15px;
+  }
+
+  .form-label > span:first-child {
+    font-size: 13px;
+  }
+
+  .form-hint {
+    font-size: 11px;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .btn-sm {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  /* 开关尺寸调整 */
+  .switch {
+    width: 44px;
+    height: 24px;
+  }
+
+  .slider:before {
+    height: 18px;
+    width: 18px;
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(20px);
+  }
+}
 </style>

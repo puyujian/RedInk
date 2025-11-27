@@ -25,103 +25,176 @@
 /* Composer Style Input Area */
 .composer-container {
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  padding: 20px;
-  max-width: 720px;
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  padding: 12px;
+  max-width: 680px;
   margin: 0 auto 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border: 1px solid var(--border-color);
-  transition: all 0.3s ease;
-}
-
-.composer-container:focus-within {
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-  border-color: var(--primary);
-}
-
-.composer-input-wrapper {
+  border: 2px solid transparent;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
 }
 
-.search-icon-static {
-  padding-top: 8px;
-  color: #999;
+.composer-container:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.composer-container.is-focused {
+  border-color: var(--primary);
+  box-shadow: 0 4px 24px rgba(255, 36, 66, 0.12);
+}
+
+.composer-container.has-content {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* 图片附件区域 */
+.composer-attachments {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 8px;
+}
+
+.attachments-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.attachment-item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
 }
 
-.composer-textarea {
+.attachment-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.2s ease;
+}
+
+.attachment-item:hover .attachment-remove {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.attachment-remove:hover {
+  background: var(--primary);
+}
+
+.attachments-hint {
+  font-size: 12px;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+/* 主输入区域 */
+.composer-main {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.composer-input {
   flex: 1;
   border: none;
   outline: none;
   font-size: 16px;
-  line-height: 1.6;
+  line-height: 1.5;
   resize: none;
-  padding: 8px 0;
+  padding: 10px 12px;
   font-family: inherit;
-  min-height: 56px;
-  max-height: 300px;
+  min-height: 44px;
+  max-height: 200px;
   color: var(--text-main);
   background: transparent;
+  border-radius: 12px;
 }
 
-.composer-textarea::placeholder {
+.composer-input::placeholder {
   color: var(--text-placeholder);
 }
 
-.composer-toolbar {
+/* 操作按钮组 */
+.composer-actions {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-bottom: 6px;
 }
 
-.toolbar-left {
-  display: flex;
-  gap: 16px;
-}
-
-.tool-btn {
+.action-btn {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #666;
-  background: #f9f9f9;
-  transition: all 0.2s;
-  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: none;
+  position: relative;
 }
 
-.tool-btn:hover {
-  background: #f0f0f0;
+/* 上传按钮 */
+.upload-btn {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.upload-btn input {
+  display: none;
+}
+
+.upload-btn:hover {
+  background: #ebebeb;
   color: var(--text-main);
+  transform: scale(1.05);
 }
 
-.tool-btn.active {
-  color: var(--primary);
+.upload-btn.has-files {
   background: rgba(255, 36, 66, 0.08);
+  color: var(--primary);
 }
 
-.badge-count {
+.upload-count {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: -4px;
+  right: -4px;
   background: var(--primary);
   color: white;
-  font-size: 11px;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 10px;
+  font-size: 10px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -129,45 +202,78 @@
   border: 2px solid white;
 }
 
-.generate-btn {
-  padding: 10px 32px;
-  height: 44px;
-  font-size: 15px;
-  border-radius: 22px;
+/* 发送按钮 */
+.send-btn {
+  background: #e0e0e0;
+  color: #999;
+}
+
+.send-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.send-btn.is-ready {
   background: var(--primary);
   color: white;
-  border: none;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
 }
 
-.generate-btn:hover {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.2);
+.send-btn.is-ready:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(255, 36, 66, 0.4);
 }
 
-.generate-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
+.send-btn.is-ready:active {
+  transform: scale(0.95);
 }
 
-.uploaded-images-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px;
-  background: #fafafa;
-  border-radius: 12px;
-  align-items: center;
-  border: 1px dashed #eee;
-  margin-bottom: 8px;
+/* 发送按钮 loading 动画 */
+.send-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 附件区域动画 */
+.attachments-slide-enter-active,
+.attachments-slide-leave-active {
+  transition: all 0.3s ease;
+}
+
+.attachments-slide-enter-from,
+.attachments-slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* 图片弹出动画 */
+.image-pop-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.image-pop-leave-active {
+  transition: all 0.2s ease;
+}
+
+.image-pop-enter-from {
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+.image-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
 }
 
 /* Scenario Cards */
@@ -451,71 +557,122 @@
   min-height: 120px;
 }
 
-/* Responsive */
-@media (max-width: 900px) {
+/* ============================================
+   Responsive - Tablet (768px - 1024px)
+   ============================================ */
+@media (max-width: 1024px) {
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 20px;
   }
 
   .scenarios-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  .scenario-card {
+    padding: 18px;
+  }
+
+  .scenario-icon-box {
+    width: 50px;
+    height: 50px;
+    margin-bottom: 14px;
   }
 }
 
-/* 移动端适配 */
+/* ============================================
+   Responsive - Mobile (< 768px)
+   ============================================ */
 @media (max-width: 768px) {
+  /* Hero Section 移动端 */
   .hero-section {
-    margin-bottom: 24px;
-    padding: 12px 0;
+    margin-bottom: 20px;
+    padding: 16px 0;
   }
 
+  /* Composer 输入框移动端优化 */
   .composer-container {
-    padding: 16px;
-    border-radius: 14px;
-    margin-bottom: 28px;
+    padding: 10px;
+    border-radius: 16px;
+    margin: 0 auto 20px; /* 保持水平居中 */
+    max-width: 100%;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   }
 
-  .composer-textarea {
-    font-size: 16px; /* Prevent zoom */
-    min-height: 48px;
+  .composer-container.is-focused {
+    box-shadow: 0 4px 16px rgba(255, 36, 66, 0.1);
   }
 
-  .composer-toolbar {
-    flex-wrap: wrap;
-    gap: 12px;
-    padding-top: 12px;
-  }
-
-  .toolbar-left {
+  .composer-main {
     gap: 8px;
-    width: 100%;
-    justify-content: space-between;
   }
 
-  .tool-btn {
-    width: 44px; /* Touch target */
-    height: 44px; /* Touch target */
-    flex: 1; /* Distribute space */
-    max-width: 60px;
+  .composer-input {
+    font-size: 16px; /* 防止 iOS 自动缩放 */
+    min-height: 42px;
+    padding: 10px 12px;
+    border-radius: 10px;
   }
 
-  .generate-btn {
-    width: 100%;
-    justify-content: center;
-    padding: 12px 24px;
-    height: 48px;
-    font-size: 16px;
-    order: 1; /* Ensure button is below tools */
+  .composer-actions {
+    gap: 6px;
+    padding-bottom: 4px;
   }
 
+  .action-btn {
+    width: 44px; /* 触控目标最小 44px */
+    height: 44px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .action-btn:active {
+    transform: scale(0.92);
+  }
+
+  /* 图片附件移动端 */
+  .composer-attachments {
+    padding: 6px 6px 10px;
+    margin-bottom: 6px;
+  }
+
+  .attachment-item {
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+  }
+
+  .attachment-remove {
+    opacity: 1; /* 移动端始终显示删除按钮 */
+    transform: scale(1);
+    width: 20px;
+    height: 20px;
+    top: 3px;
+    right: 3px;
+  }
+
+  .attachments-hint {
+    display: none; /* 移动端隐藏提示节省空间 */
+  }
+
+  /* 场景卡片移动端 */
   .scenarios-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
+    margin-bottom: 28px;
   }
 
   .scenario-card {
     padding: 16px;
     border-radius: 14px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .scenario-card:active {
+    transform: scale(0.97);
+    background: #FAFAFA;
   }
 
   .scenario-icon-box {
@@ -525,55 +682,346 @@
     margin-bottom: 12px;
   }
 
+  .scenario-icon-box svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .scenario-title {
+    font-size: 14px;
+  }
+
+  .scenario-desc {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  /* Dashboard Grid 移动端 */
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
   .feature-card {
     min-height: auto;
-    padding: 20px;
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  .card-header {
+    margin-bottom: 16px;
+  }
+
+  .header-left {
+    gap: 10px;
+  }
+
+  .icon-box {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+  }
+
+  .icon-box svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .section-title-sm {
+    font-size: 15px;
+  }
+
+  .btn-text {
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.03);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn-text:active {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  /* 最近记录列表移动端 - 触控友好 */
+  .recent-list {
+    gap: 10px;
   }
 
   .recent-item {
-    padding: 12px 14px;
-    gap: 12px;
+    padding: 14px 16px;
+    gap: 14px;
+    border-radius: 14px;
+    min-height: 64px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .recent-item:active {
+    background: #EDF2F7;
+    transform: scale(0.98);
   }
 
   .recent-icon {
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
+    border-radius: 11px;
+  }
+
+  .recent-title {
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  .recent-date {
+    font-size: 12px;
+  }
+
+  .recent-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 50%;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* 热搜列表移动端 */
+  .trend-list {
+    gap: 4px;
+  }
+
+  .trend-item {
+    padding: 14px 10px;
+    border-radius: 10px;
+    min-height: 52px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .trend-item:active {
+    background: #F5F5F5;
+  }
+
+  .trend-rank {
+    font-size: 15px;
+    width: 24px;
+    margin-right: 10px;
+  }
+
+  .trend-name {
+    font-size: 14px;
+  }
+
+  .trend-hot {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  /* 空状态移动端 */
+  .empty-state-mini {
+    min-height: 100px;
+    border-radius: 14px;
+    font-size: 13px;
   }
 }
 
-/* 小屏手机适配 (320px - 428px) */
+/* ============================================
+   Responsive - Small Mobile (< 428px)
+   ============================================ */
 @media (max-width: 428px) {
+  .composer-container {
+    padding: 8px;
+    border-radius: 14px;
+  }
+
+  .composer-input {
+    padding: 8px 10px;
+    min-height: 40px;
+  }
+
+  .action-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  .attachment-item {
+    width: 46px;
+    height: 46px;
+    border-radius: 8px;
+  }
+
   .scenarios-grid {
-    grid-template-columns: 1fr; /* Single column for better readability */
-    gap: 12px;
+    grid-template-columns: 1fr; /* 单列布局提升可读性 */
+    gap: 10px;
   }
 
   .scenario-card {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     text-align: left;
-    padding: 12px 16px;
+    padding: 14px 16px;
   }
 
   .scenario-icon-box {
     margin: 0;
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
     flex-shrink: 0;
   }
-  
+
+  .scenario-icon-box svg {
+    width: 22px;
+    height: 22px;
+  }
+
   .scenario-content {
     flex: 1;
   }
-  
+
   .scenario-title {
     margin-bottom: 2px;
-    font-size: 15px;
+    font-size: 14px;
   }
-  
+
+  .scenario-desc {
+    font-size: 11px;
+  }
+
+  .feature-card {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .card-header {
+    margin-bottom: 14px;
+  }
+
+  .recent-item {
+    padding: 12px 14px;
+    gap: 12px;
+    border-radius: 12px;
+  }
+
+  .recent-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .recent-title {
+    font-size: 14px;
+  }
+
+  .recent-arrow {
+    width: 26px;
+    height: 26px;
+  }
+
+  .trend-item {
+    padding: 12px 8px;
+    min-height: 48px;
+  }
+
+  .trend-rank {
+    font-size: 14px;
+    width: 22px;
+  }
+
+  .trend-name {
+    font-size: 13px;
+  }
+
+  .trend-hot {
+    font-size: 11px;
+  }
+}
+
+/* ============================================
+   iOS Safe Area Support
+   ============================================ */
+@supports (padding: max(0px)) {
   .composer-container {
-    padding: 12px;
+    /* 使用 padding 替代 margin 以保持居中 */
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+}
+
+/* ============================================
+   Touch Device Optimizations
+   ============================================ */
+@media (hover: none) and (pointer: coarse) {
+  /* 触屏设备禁用hover效果 */
+  .scenario-card:hover {
+    transform: none;
+    box-shadow: var(--shadow-sm);
+    border-color: transparent;
+  }
+
+  .recent-item:hover {
+    background: #F9FAFB;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .recent-item:hover .recent-icon {
+    color: #666;
+    border-color: rgba(0, 0, 0, 0.04);
+    background: white;
+  }
+
+  .recent-item:hover .recent-arrow {
+    color: var(--text-placeholder);
+    opacity: 1;
+  }
+
+  .trend-item:hover {
+    background: transparent;
+  }
+
+  .upload-btn:hover {
+    background: #f5f5f5;
+    color: #666;
+    transform: none;
+  }
+
+  .send-btn.is-ready:hover {
+    transform: none;
+    box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+  }
+}
+
+/* ============================================
+   Reduced Motion Preference
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  .hero-section,
+  .dashboard-grid,
+  .scenario-card,
+  .recent-item,
+  .trend-item,
+  .composer-container {
+    animation: none;
+    transition: none;
+  }
+
+  .attachments-slide-enter-active,
+  .attachments-slide-leave-active,
+  .image-pop-enter-active,
+  .image-pop-leave-active {
+    transition: none;
+  }
+
+  .send-spinner {
+    animation: none;
   }
 }
 

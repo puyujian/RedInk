@@ -768,4 +768,303 @@ onMounted(() => {
   color: #dc2626;
   cursor: pointer;
 }
+
+/* ==================== 响应式布局 ==================== */
+
+/* 平板适配 */
+@media (max-width: 1024px) {
+  .stats-bar {
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 16px 20px;
+  }
+
+  .stat-item {
+    min-width: calc(50% - 12px);
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .toolbar-left {
+    flex-wrap: wrap;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .images-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 统计栏 */
+  .stats-bar {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .stat-item {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    min-width: auto;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .stat-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .stat-label {
+    font-size: 13px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  /* 工具栏 */
+  .toolbar {
+    margin-bottom: 16px;
+  }
+
+  .toolbar-left {
+    gap: 8px;
+  }
+
+  .search-input {
+    width: 100%;
+    flex: none;
+    padding: 12px 16px;
+  }
+
+  .filter-input {
+    flex: 1;
+    padding: 12px 16px;
+  }
+
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .toolbar-right .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 图片网格 */
+  .images-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .image-card {
+    border-radius: 10px;
+  }
+
+  .image-info {
+    padding: 10px;
+  }
+
+  .image-filename {
+    font-size: 12px;
+  }
+
+  .image-meta {
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .image-user {
+    font-size: 11px;
+  }
+
+  .image-actions {
+    padding: 0 10px 10px;
+  }
+
+  .btn-action {
+    padding: 6px;
+    font-size: 13px;
+  }
+
+  .image-checkbox input {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* 分页 */
+  .pagination {
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .btn-page {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .page-info {
+    font-size: 13px;
+  }
+
+  /* 预览弹窗 */
+  .preview-overlay {
+    padding: 16px;
+  }
+
+  .preview-container {
+    max-width: 100%;
+  }
+
+  .preview-container img {
+    max-height: 70vh;
+    border-radius: 6px;
+  }
+
+  .btn-close-preview {
+    top: -36px;
+    width: 28px;
+    height: 28px;
+    font-size: 20px;
+  }
+
+  .preview-info {
+    margin-top: 12px;
+    font-size: 13px;
+  }
+
+  /* 删除弹窗底部抽屉样式 */
+  .modal-overlay {
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 80vh;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 16px 20px;
+  }
+
+  .modal-body p {
+    font-size: 14px;
+  }
+
+  .modal-footer {
+    padding: 12px 20px 20px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 20px;
+  }
+
+  /* 错误提示 */
+  .error-toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    padding: 14px 16px;
+    font-size: 13px;
+  }
+
+  /* 空状态 */
+  .empty-state {
+    padding: 60px 16px;
+  }
+
+  .empty-icon {
+    font-size: 40px;
+  }
+
+  /* 加载状态 */
+  .loading-container {
+    padding: 50px 16px;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .stats-bar {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .images-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .image-card {
+    border-radius: 8px;
+  }
+
+  .image-checkbox {
+    top: 6px;
+    left: 6px;
+  }
+
+  .image-info {
+    padding: 8px;
+  }
+
+  .image-filename {
+    font-size: 11px;
+  }
+
+  .image-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    font-size: 10px;
+  }
+
+  .image-actions {
+    padding: 0 8px 8px;
+    gap: 6px;
+  }
+
+  .btn-action {
+    padding: 5px;
+    font-size: 12px;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
 </style>

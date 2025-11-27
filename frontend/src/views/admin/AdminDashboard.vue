@@ -358,7 +358,9 @@ onMounted(() => {
   background: #b91c1c;
 }
 
-/* 响应式布局 */
+/* ==================== 响应式布局 ==================== */
+
+/* 平板适配 */
 @media (max-width: 1200px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -369,13 +371,77 @@ onMounted(() => {
   }
 }
 
+/* 移动端适配 */
 @media (max-width: 768px) {
   .stats-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .details-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .stat-icon {
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .stat-label {
+    font-size: 13px;
+  }
+
+  .detail-card {
+    padding: 16px;
+  }
+
+  .card-title {
+    font-size: 15px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+  }
+
+  .detail-value {
+    font-size: 16px;
+  }
+
+  .error-message {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .btn-retry {
+    width: 100%;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .stat-card {
+    padding: 14px;
+  }
+
+  .stat-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+    border-radius: 10px;
+  }
+
+  .stat-value {
+    font-size: 22px;
   }
 }
 </style>

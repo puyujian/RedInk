@@ -10,27 +10,30 @@
           class="search-input"
           @input="debouncedSearch"
         />
-        <select v-model="filterRole" class="filter-select" @change="fetchUsers">
-          <option value="">所有角色</option>
-          <option value="user">普通用户</option>
-          <option value="admin">管理员</option>
-          <option value="pro">专业版</option>
-        </select>
-        <select v-model="filterStatus" class="filter-select" @change="fetchUsers">
-          <option value="">所有状态</option>
-          <option value="active">已启用</option>
-          <option value="inactive">已禁用</option>
-        </select>
+        <div class="filter-group">
+          <select v-model="filterRole" class="filter-select" @change="fetchUsers">
+            <option value="">所有角色</option>
+            <option value="user">普通用户</option>
+            <option value="admin">管理员</option>
+            <option value="pro">专业版</option>
+          </select>
+          <select v-model="filterStatus" class="filter-select" @change="fetchUsers">
+            <option value="">所有状态</option>
+            <option value="active">已启用</option>
+            <option value="inactive">已禁用</option>
+          </select>
+        </div>
       </div>
       <div class="toolbar-right">
         <button class="btn btn-primary" @click="showCreateModal = true">
-          <span>+</span> 新建用户
+          <span class="btn-icon">+</span>
+          <span class="btn-text">新建用户</span>
         </button>
       </div>
     </div>
 
-    <!-- 用户表格 -->
-    <div class="table-container">
+    <!-- 桌面端：表格视图 -->
+    <div class="table-container desktop-only">
       <table class="data-table">
         <thead>
           <tr>
@@ -110,6 +113,83 @@
       </div>
     </div>
 
+    <!-- 移动端：卡片视图 -->
+    <div class="card-list mobile-only">
+      <div v-if="loading" class="loading-container">
+        <div class="loading-spinner"></div>
+        <span>加载中...</span>
+      </div>
+
+      <div v-else-if="users.length === 0" class="empty-state">
+        <span class="empty-icon">👥</span>
+        <span class="empty-text">暂无用户数据</span>
+      </div>
+
+      <article
+        v-else
+        v-for="user in users"
+        :key="user.id"
+        class="user-card"
+      >
+        <div class="card-header">
+          <div class="user-avatar">
+            {{ (user.username || 'U')[0].toUpperCase() }}
+          </div>
+          <div class="user-meta">
+            <div class="user-name">{{ user.username }}</div>
+            <div class="user-email">{{ user.email || '未设置邮箱' }}</div>
+          </div>
+          <span :class="['status-badge', user.is_active ? 'active' : 'inactive']">
+            {{ user.is_active ? '已启用' : '已禁用' }}
+          </span>
+        </div>
+
+        <div class="card-body">
+          <div class="info-row">
+            <span class="info-label">用户ID</span>
+            <span class="info-value">{{ user.id }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">角色</span>
+            <span :class="['role-badge', `role-${user.role}`]">
+              {{ roleLabels[user.role] || user.role }}
+            </span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">注册时间</span>
+            <span class="info-value">{{ formatDateShort(user.created_at) }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">最后登录</span>
+            <span class="info-value">{{ user.last_login_at ? formatDateShort(user.last_login_at) : '-' }}</span>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary" @click="openEditModal(user)">
+            ✏️ 编辑
+          </button>
+          <button
+            v-if="user.is_active"
+            class="btn btn-sm btn-warning"
+            @click="toggleUserStatus(user)"
+          >
+            🚫 禁用
+          </button>
+          <button
+            v-else
+            class="btn btn-sm btn-success"
+            @click="toggleUserStatus(user)"
+          >
+            ✅ 启用
+          </button>
+          <button class="btn btn-sm btn-danger" @click="confirmDelete(user)">
+            🗑️ 删除
+          </button>
+        </div>
+      </article>
+    </div>
+
     <!-- 分页 -->
     <div class="pagination" v-if="totalPages > 1">
       <button
@@ -117,15 +197,17 @@
         :disabled="currentPage <= 1"
         @click="goToPage(currentPage - 1)"
       >
-        上一页
+        <span class="page-arrow">‹</span>
+        <span class="page-text">上一页</span>
       </button>
-      <span class="page-info">第 {{ currentPage }} / {{ totalPages }} 页</span>
+      <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
       <button
         class="btn-page"
         :disabled="currentPage >= totalPages"
         @click="goToPage(currentPage + 1)"
       >
-        下一页
+        <span class="page-text">下一页</span>
+        <span class="page-arrow">›</span>
       </button>
     </div>
 
@@ -323,11 +405,22 @@ function goToPage(page: number) {
   }
 }
 
-// 格式化日期
+// 格式化日期（完整）
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// 格式化日期（简短，用于移动端）
+function formatDateShort(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -464,11 +557,20 @@ onMounted(() => {
   position: relative;
 }
 
+/* 响应式显示控制 */
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
 /* 工具栏 */
 .toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 24px;
   gap: 16px;
   flex-wrap: wrap;
@@ -478,6 +580,13 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.filter-group {
+  display: flex;
+  gap: 12px;
 }
 
 .search-input {
@@ -515,7 +624,13 @@ onMounted(() => {
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-sm {
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .btn-primary {
@@ -544,6 +659,28 @@ onMounted(() => {
 
 .btn-danger:hover {
   background: #dc2626;
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
+.btn-success {
+  background: #10b981;
+  color: #fff;
+}
+
+.btn-success:hover {
+  background: #059669;
+}
+
+.btn-icon {
+  font-size: 16px;
 }
 
 /* 表格 */
@@ -620,7 +757,7 @@ onMounted(() => {
 /* 状态徽章 */
 .status-badge {
   display: inline-block;
-  position: static;  /* 覆盖全局 history.css 中的 position: absolute */
+  position: static;
   padding: 4px 12px;
   border-radius: 20px;
   font-size: 12px;
@@ -688,6 +825,134 @@ onMounted(() => {
   background: #fecaca;
 }
 
+/* 卡片列表（移动端） */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.user-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.user-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-weight: 600;
+  color: #1a1a2e;
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+
+.user-email {
+  font-size: 13px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-body {
+  padding: 12px 16px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.info-value {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 500;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f9fafb;
+  flex-wrap: wrap;
+}
+
+.card-actions .btn {
+  flex: 1;
+  min-width: 70px;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: #9ca3af;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  gap: 16px;
+  color: #6b7280;
+}
+
 /* 分页 */
 .pagination {
   display: flex;
@@ -698,9 +963,12 @@ onMounted(() => {
 }
 
 .btn-page {
-  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #fff;
   cursor: pointer;
   font-size: 14px;
@@ -716,9 +984,16 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+.page-arrow {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .page-info {
   font-size: 14px;
   color: #6b7280;
+  min-width: 60px;
+  text-align: center;
 }
 
 /* 加载状态 */
@@ -761,13 +1036,16 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 16px;
 }
 
 .modal {
   background: #fff;
   border-radius: 16px;
   width: 480px;
-  max-width: 90vw;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
@@ -781,6 +1059,10 @@ onMounted(() => {
   align-items: center;
   padding: 20px 24px;
   border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
 }
 
 .modal-header h3 {
@@ -799,6 +1081,9 @@ onMounted(() => {
   cursor: pointer;
   border-radius: 6px;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-close:hover {
@@ -816,6 +1101,9 @@ onMounted(() => {
   gap: 12px;
   padding: 16px 24px;
   border-top: 1px solid #e5e7eb;
+  position: sticky;
+  bottom: 0;
+  background: #fff;
 }
 
 /* 表单 */
@@ -872,7 +1160,8 @@ onMounted(() => {
 .error-toast {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   background: #fef2f2;
   color: #dc2626;
   padding: 16px 24px;
@@ -882,6 +1171,7 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   z-index: 1001;
+  max-width: calc(100vw - 32px);
 }
 
 .error-toast button {
@@ -890,5 +1180,127 @@ onMounted(() => {
   font-size: 18px;
   color: #dc2626;
   cursor: pointer;
+  padding: 4px;
+}
+
+/* ==================== 响应式布局 ==================== */
+
+/* 平板适配 */
+@media (max-width: 1024px) {
+  .search-input {
+    width: 200px;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 切换视图 */
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: block !important;
+  }
+
+  /* 工具栏垂直布局 */
+  .toolbar {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .toolbar-left {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .filter-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .toolbar-right .btn {
+    width: 100%;
+  }
+
+  /* 分页调整 */
+  .pagination {
+    gap: 8px;
+  }
+
+  .btn-page {
+    padding: 10px 12px;
+  }
+
+  .page-text {
+    display: none;
+  }
+
+  .page-arrow {
+    font-size: 20px;
+  }
+
+  /* 弹窗全屏 */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    max-height: 85vh;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-body {
+    padding: 20px;
+  }
+
+  .modal-footer {
+    padding: 16px 20px;
+    flex-direction: column;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .card-actions {
+    flex-direction: column;
+  }
+
+  .card-actions .btn {
+    width: 100%;
+  }
+
+  .filter-group {
+    flex-direction: column;
+  }
+
+  .user-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
 }
 </style>

@@ -686,4 +686,170 @@ watch(showHistoryModal, (val) => {
 .toast-success button {
   color: #059669;
 }
+
+/* ==================== 响应式布局 ==================== */
+
+/* 平板适配 */
+@media (max-width: 1024px) {
+  .modal-lg {
+    width: 90vw;
+  }
+
+  .history-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .history-actions {
+    width: 100%;
+  }
+
+  .history-actions .btn {
+    flex: 1;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 卡片头部 */
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .header-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 编辑器 */
+  .editor-toolbar {
+    padding: 10px 16px;
+  }
+
+  .editor-hint {
+    font-size: 11px;
+  }
+
+  .config-editor {
+    min-height: 350px;
+    padding: 16px;
+    font-size: 13px;
+  }
+
+  .syntax-error {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  /* 弹窗底部抽屉样式 */
+  .modal-overlay {
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 85vh;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 16px 20px;
+  }
+
+  .modal-footer {
+    padding: 12px 20px 20px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 历史列表 */
+  .history-item {
+    padding: 14px;
+  }
+
+  .history-version {
+    font-size: 14px;
+  }
+
+  .history-meta {
+    font-size: 12px;
+  }
+
+  .history-diff {
+    font-size: 11px;
+  }
+
+  .history-actions {
+    flex-direction: column;
+  }
+
+  .history-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 预览内容 */
+  .preview-content {
+    font-size: 12px;
+    max-height: 300px;
+    padding: 14px;
+  }
+
+  /* Toast */
+  .toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    padding: 14px 16px;
+    font-size: 13px;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 480px) {
+  .card-header h3 {
+    font-size: 15px;
+  }
+
+  .config-editor {
+    min-height: 300px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
 </style>

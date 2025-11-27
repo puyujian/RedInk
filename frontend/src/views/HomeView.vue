@@ -40,74 +40,75 @@
         <p class="page-subtitle">输入你的创意主题，让 AI 帮你生成爆款标题、正文和封面图</p>
       </div>
 
-      <!-- Search Box (Composer Style) -->
-      <div class="composer-container">
-        <div class="composer-input-wrapper">
-          <div class="search-icon-static">
-             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+      <!-- Composer Input (Modern Style) -->
+      <div class="composer-container" :class="{ 'is-focused': isInputFocused, 'has-content': topic.trim() || uploadedImages.length > 0 }">
+        <!-- 已上传图片预览 -->
+        <Transition name="attachments-slide">
+          <div v-if="uploadedImages.length > 0" class="composer-attachments">
+            <TransitionGroup name="image-pop" tag="div" class="attachments-list">
+              <div
+                v-for="(img, idx) in uploadedImages"
+                :key="img.preview"
+                class="attachment-item"
+              >
+                <img :src="img.preview" :alt="`图片 ${idx + 1}`" />
+                <button class="attachment-remove" @click="removeImage(idx)" type="button">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </TransitionGroup>
+            <span class="attachments-hint">参考图片</span>
           </div>
+        </Transition>
+
+        <!-- 主输入区域 -->
+        <div class="composer-main">
           <textarea
             ref="textareaRef"
             v-model="topic"
-            class="composer-textarea"
-            placeholder="输入主题，例如：秋季显白美甲..."
+            class="composer-input"
+            placeholder="输入你的创意主题..."
             @keydown.enter.prevent="handleEnter"
             @input="adjustHeight"
+            @focus="isInputFocused = true"
+            @blur="isInputFocused = false"
             :disabled="loading"
             rows="1"
           ></textarea>
-        </div>
 
-        <!-- 已上传图片预览 -->
-        <div v-if="uploadedImages.length > 0" class="uploaded-images-preview">
-          <div
-            v-for="(img, idx) in uploadedImages"
-            :key="idx"
-            class="uploaded-image-item"
-          >
-            <img :src="img.preview" :alt="`图片 ${idx + 1}`" />
-            <button class="remove-image-btn" @click="removeImage(idx)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-          <div class="upload-hint">
-            这些图片将用于生成封面和内容参考
-          </div>
-        </div>
-
-        <!-- Toolbar -->
-        <div class="composer-toolbar">
-          <div class="toolbar-left">
-            <label class="tool-btn" :class="{ 'active': uploadedImages.length > 0 }" title="上传参考图">
+          <!-- 操作按钮组 -->
+          <div class="composer-actions">
+            <label class="action-btn upload-btn" :class="{ 'has-files': uploadedImages.length > 0 }" title="上传参考图片">
               <input
                 type="file"
                 accept="image/*"
                 multiple
                 @change="handleImageUpload"
                 :disabled="loading"
-                style="display: none;"
               />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                 <circle cx="8.5" cy="8.5" r="1.5"></circle>
                 <polyline points="21 15 16 10 5 21"></polyline>
               </svg>
-              <span v-if="uploadedImages.length > 0" class="badge-count">{{ uploadedImages.length }}</span>
+              <span v-if="uploadedImages.length > 0" class="upload-count">{{ uploadedImages.length }}</span>
             </label>
-          </div>
-          <div class="toolbar-right">
+
             <button
-              class="btn btn-primary generate-btn"
+              class="action-btn send-btn"
               @click="handleGenerate"
               :disabled="!topic.trim() || loading"
+              :class="{ 'is-ready': topic.trim() && !loading }"
+              type="button"
             >
-              <span v-if="loading" class="spinner-sm"></span>
-              <span v-else>生成大纲</span>
+              <span v-if="loading" class="send-spinner"></span>
+              <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 2L11 13"></path>
+                <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+              </svg>
             </button>
           </div>
         </div>
@@ -224,6 +225,7 @@ const showLoginHint = ref(false)
 const recentRecords = ref<any[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const isExpanded = ref(false)
+const isInputFocused = ref(false)
 
 // 监听登录状态变化，自动刷新最近创作
 watch(() => authStore.isAuthenticated, (newValue) => {
@@ -638,165 +640,6 @@ onUnmounted(() => {
   margin-top: 12px;
 }
 
-/* Search Box */
-.search-box-wrapper {
-  max-width: 680px;
-  margin: 0 auto;
-  position: relative;
-}
-
-.input-group.big-search {
-  position: relative;
-}
-
-.search-icon {
-  position: absolute;
-  left: 24px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-  pointer-events: none;
-}
-
-.search-input {
-  padding-left: 60px; /* Space for icon */
-  padding-right: 190px; /* Space for buttons: 130px (upload) + 40px (width) + spacing */
-  padding-top: 18px;
-  padding-bottom: 18px;
-  min-height: 64px;
-  font-size: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
-  border-radius: 32px; /* Slightly less rounded for textarea look if multiline, but we want pill shape initially. 32px is half of 64px */
-  resize: none;
-  overflow-y: auto;
-  line-height: 1.6;
-  font-family: inherit;
-}
-
-/* 当高度增加时，圆角调整一下更好看 */
-.input-group.expanded .search-input {
-  border-radius: 24px;
-}
-
-.search-btn {
-  position: absolute;
-  right: 8px;
-  bottom: 8px; /* Anchor to bottom */
-  top: auto;   /* Reset top */
-  padding: 0 28px;
-  font-size: 15px;
-  border-radius: 100px;
-  height: 48px; /* Fixed height for button */
-  z-index: 5;
-}
-
-/* 图片上传按钮 */
-.upload-btn {
-  position: absolute;
-  right: 146px; /* 8px (right margin) + 110px (approx btn width) + gap */
-  bottom: 12px; /* Anchor to bottom */
-  top: auto;    /* Reset top */
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: #f5f5f5;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
-  transition: all 0.2s;
-  z-index: 5;
-}
-
-.upload-btn:hover {
-  background: #eee;
-  color: var(--primary);
-}
-
-.upload-btn.has-images {
-  background: rgba(255, 36, 66, 0.1);
-  color: var(--primary);
-}
-
-.upload-btn span {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  background: var(--primary);
-  color: white;
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-}
-
-/* 已上传图片预览 */
-.uploaded-images-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 16px;
-  padding: 16px;
-  background: #fafafa;
-  border-radius: 12px;
-  align-items: center;
-}
-
-.uploaded-image-item {
-  position: relative;
-  width: 60px;
-  height: 60px;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.uploaded-image-item img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.remove-image-btn {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.uploaded-image-item:hover .remove-image-btn {
-  opacity: 1;
-}
-
-.remove-image-btn:hover {
-  background: var(--primary);
-}
-
-.upload-hint {
-  flex: 1;
-  font-size: 12px;
-  color: var(--text-sub);
-  text-align: right;
-}
-
 /* Dashboard Grid */
 .dashboard-grid {
   display: grid;
@@ -1001,20 +844,445 @@ onUnmounted(() => {
   animation: slideUp 0.3s ease-out;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .showcase-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    padding: 12px;
+/* ============================================
+   Responsive - Tablet (768px - 1024px)
+   ============================================ */
+@media (max-width: 1024px) {
+  .home-container {
+    max-width: 100%;
+    padding: 10px 16px;
   }
 
+  .hero-section {
+    padding: 40px 40px;
+    border-radius: 20px;
+  }
+
+  .content-section {
+    padding: 28px;
+    border-radius: 20px;
+  }
+
+  .showcase-grid {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+}
+
+/* ============================================
+   Responsive - Mobile (< 768px)
+   ============================================ */
+@media (max-width: 768px) {
+  .home-container {
+    padding: 8px 12px;
+    padding-top: 4px;
+  }
+
+  /* 背景网格优化 */
+  .showcase-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .showcase-item {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  .showcase-overlay {
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.85) 0%,
+      rgba(255, 255, 255, 0.8) 50%,
+      rgba(255, 255, 255, 0.75) 100%
+    );
+    backdrop-filter: blur(3px);
+  }
+
+  /* Hero 区域优化 */
+  .hero-section {
+    padding: 24px 20px 28px;
+    margin-bottom: 16px;
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  }
+
+  .hero-content {
+    margin-bottom: 24px;
+  }
+
+  .brand-pill {
+    padding: 5px 12px;
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+
+  .brand-pill svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .platform-slogan {
+    font-size: 15px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  .page-title {
+    font-size: 26px !important;
+  }
+
+  .page-subtitle {
+    font-size: 14px;
+    margin-top: 8px;
+    line-height: 1.6;
+  }
+
+  /* 登录提示横幅优化 */
+  .login-hint-banner {
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+  }
+
+  .hint-content {
+    gap: 10px;
+    text-align: left;
+  }
+
+  .hint-content svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .hint-content span {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .hint-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .btn-hint-action {
+    flex: 1;
+    text-align: center;
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .btn-hint-close {
+    padding: 8px 12px;
+    font-size: 22px;
+  }
+
+  /* 内容区域优化 */
+  .content-section {
+    padding: 20px 16px;
+    border-radius: 20px;
+  }
+
+  /* 仪表板网格优化 */
   .dashboard-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .scenarios-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .feature-card {
+    min-height: auto;
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  .card-header {
+    margin-bottom: 14px;
+  }
+
+  .header-left {
+    gap: 10px;
+  }
+
+  .icon-box {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .icon-box svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .section-title-sm {
+    font-size: 15px;
+  }
+
+  .btn-text {
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.03);
+  }
+
+  /* 最近创作列表优化 - 触控友好 */
+  .recent-list {
+    gap: 10px;
+  }
+
+  .recent-item {
+    padding: 14px;
+    gap: 14px;
+    border-radius: 14px;
+    min-height: 64px; /* 确保足够的触控区域 */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .recent-item:active {
+    background: #EDF2F7;
+    transform: scale(0.98);
+  }
+
+  .recent-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .recent-title {
+    font-size: 15px;
+    margin-bottom: 3px;
+  }
+
+  .recent-date {
+    font-size: 12px;
+  }
+
+  .recent-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  /* 热搜列表优化 */
+  .trend-list {
+    gap: 6px;
+  }
+
+  .trend-item {
+    padding: 14px 8px;
+    border-radius: 10px;
+    min-height: 52px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .trend-item:active {
+    background: #F5F5F5;
+  }
+
+  .trend-rank {
+    font-size: 15px;
+    width: 22px;
+    margin-right: 10px;
+  }
+
+  .trend-name {
+    font-size: 14px;
+  }
+
+  .trend-hot {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 空状态优化 */
+  .empty-state-mini {
+    min-height: 100px;
+    border-radius: 14px;
+    font-size: 13px;
+  }
+
+  /* 错误提示优化 */
+  .error-toast {
+    bottom: 24px;
+    left: 16px;
+    right: 16px;
+    transform: none;
+    padding: 14px 20px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+
+  .error-toast svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+}
+
+/* ============================================
+   Responsive - Small Mobile (< 428px)
+   ============================================ */
+@media (max-width: 428px) {
+  .home-container {
+    padding: 6px 10px;
+  }
+
+  .showcase-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .hero-section {
+    padding: 20px 16px 24px;
+    border-radius: 16px;
+  }
+
+  .brand-pill {
+    padding: 4px 10px;
+    font-size: 11px;
+    margin-bottom: 12px;
+  }
+
+  .platform-slogan {
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  .page-title {
+    font-size: 22px !important;
+    line-height: 1.3;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+  }
+
+  .login-hint-banner {
+    padding: 14px 16px;
+    border-radius: 12px;
+    gap: 12px;
+  }
+
+  .hint-content span {
+    font-size: 13px;
+  }
+
+  .btn-hint-action {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .content-section {
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
+
+  .feature-card {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .card-header {
+    margin-bottom: 12px;
+  }
+
+  .recent-item {
+    padding: 12px;
+    gap: 12px;
+    border-radius: 12px;
+  }
+
+  .recent-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+
+  .recent-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .recent-title {
+    font-size: 14px;
+  }
+
+  .trend-item {
+    padding: 12px 6px;
+  }
+}
+
+/* ============================================
+   Safe Area - iOS 刘海屏适配
+   ============================================ */
+@supports (padding: max(0px)) {
+  .home-container {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  .error-toast {
+    bottom: max(24px, env(safe-area-inset-bottom));
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+  }
+}
+
+/* ============================================
+   Touch & Interaction Enhancements
+   ============================================ */
+@media (hover: none) and (pointer: coarse) {
+  /* 触屏设备优化 */
+  .recent-item,
+  .trend-item,
+  .btn-text,
+  .btn-hint-action {
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  .recent-item:hover {
+    transform: none;
+    background: #F9FAFB;
+  }
+
+  .scenario-card:hover {
+    transform: none;
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+/* ============================================
+   Reduced Motion - 减少动画
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  .hero-section,
+  .dashboard-grid,
+  .login-hint-banner,
+  .error-toast {
+    animation: none;
+  }
+
+  .showcase-grid {
+    transform: none !important;
+  }
+
+  .recent-item,
+  .trend-item,
+  .feature-card {
+    transition: none;
   }
 }
 </style>
