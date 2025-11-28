@@ -203,6 +203,24 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       {{ error }}
     </div>
+
+    <!-- 大纲生成等待状态模态框 -->
+    <Transition name="modal-fade">
+      <div v-if="loading" class="loading-modal-overlay" @click.self="loading = false">
+        <div class="loading-modal">
+          <div class="loading-content">
+            <div class="loading-spinner-large"></div>
+            <h3 class="loading-title">正在生成大纲</h3>
+            <p class="loading-subtitle">AI 正在为您构思内容结构...</p>
+            <div class="loading-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -1465,6 +1483,168 @@ onUnmounted(() => {
 }
 
 /* ============================================
+   Loading Modal - 大纲生成等待状态
+   ============================================ */
+.loading-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.loading-modal {
+  background: white;
+  border-radius: 24px;
+  padding: 48px 40px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalSlideUp 0.3s ease-out;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.loading-spinner-large {
+  width: 64px;
+  height: 64px;
+  border: 4px solid #f0f0f0;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 24px;
+}
+
+.loading-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 8px 0;
+}
+
+.loading-subtitle {
+  font-size: 14px;
+  color: var(--text-sub);
+  margin: 0 0 24px 0;
+  line-height: 1.6;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Modal Transitions */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-active .loading-modal {
+  animation: modalSlideUp 0.3s ease-out;
+}
+
+.modal-fade-leave-active .loading-modal {
+  animation: modalSlideDown 0.3s ease-in;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modalSlideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+}
+
+@keyframes dotPulse {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Mobile Optimization */
+@media (max-width: 768px) {
+  .loading-modal {
+    padding: 36px 28px;
+    border-radius: 20px;
+    max-width: calc(100% - 40px);
+  }
+
+  .loading-spinner-large {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 20px;
+  }
+
+  .loading-title {
+    font-size: 18px;
+  }
+
+  .loading-subtitle {
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+}
+
+/* ============================================
    Reduced Motion - 减少动画
    ============================================ */
 @media (prefers-reduced-motion: reduce) {
@@ -1483,6 +1663,15 @@ onUnmounted(() => {
   .trend-item,
   .feature-card {
     transition: none;
+  }
+
+  .loading-spinner-large,
+  .loading-dots span {
+    animation: none;
+  }
+
+  .loading-modal {
+    animation: none;
   }
 }
 </style>
