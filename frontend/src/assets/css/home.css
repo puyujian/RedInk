@@ -1,13 +1,57 @@
-/* Hero Section */
 .hero-section {
   text-align: center;
-  margin-bottom: 50px;
-  padding: 30px 0;
+  margin-bottom: 45px;
+  padding: 52px 60px;
   animation: fadeIn 0.6s ease-out;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 32px;
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+      circle at 15% 20%,
+      rgba(255, 255, 255, 0.5),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 80% 10%,
+      rgba(255, 255, 255, 0.35),
+      transparent 50%
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-section::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0)
+  );
+  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .hero-content {
   margin-bottom: 36px;
+  position: relative;
+  z-index: 1;
 }
 
 .brand-pill {
@@ -24,28 +68,65 @@
 
 /* Composer Style Input Area */
 .composer-container {
-  background: white;
-  border-radius: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  padding: 12px;
-  max-width: 680px;
-  margin: 0 auto 40px;
-  border: 2px solid transparent;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  padding: 16px;
+  max-width: 780px;
+  margin: 0 auto 48px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  overflow: hidden;
+}
+
+.composer-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+      circle at 20% 20%,
+      rgba(255, 255, 255, 0.45),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 80% 0%,
+      rgba(255, 255, 255, 0.35),
+      transparent 45%
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.composer-container::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0)
+  );
+  pointer-events: none;
+  z-index: 0;
 }
 
 .composer-container:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.18);
 }
 
 .composer-container.is-focused {
-  border-color: var(--primary);
-  box-shadow: 0 4px 24px rgba(255, 36, 66, 0.12);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 36px 80px rgba(15, 23, 42, 0.22);
 }
 
 .composer-container.has-content {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.12);
 }
 
 /* 图片附件区域 */
@@ -119,23 +200,29 @@
 .composer-main {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
 }
 
 .composer-input {
   flex: 1;
   border: none;
   outline: none;
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 17px;
+  line-height: 1.6;
   resize: none;
-  padding: 10px 12px;
+  padding: 14px 16px;
   font-family: inherit;
-  min-height: 44px;
-  max-height: 200px;
+  min-height: 48px;
+  max-height: 220px;
   color: var(--text-main);
-  background: transparent;
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 18px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .composer-input::placeholder {
@@ -146,28 +233,34 @@
 .composer-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
   flex-shrink: 0;
   padding-bottom: 6px;
+  position: relative;
+  z-index: 1;
 }
 
 .action-btn {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   border: none;
   position: relative;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: var(--text-main);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.15);
 }
 
 /* 上传按钮 */
 .upload-btn {
-  background: #f5f5f5;
-  color: #666;
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text-main);
 }
 
 .upload-btn input {
@@ -175,14 +268,15 @@
 }
 
 .upload-btn:hover {
-  background: #ebebeb;
-  color: var(--text-main);
-  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.28);
+  color: var(--primary);
+  transform: translateY(-2px);
 }
 
 .upload-btn.has-files {
-  background: rgba(255, 36, 66, 0.08);
-  color: var(--primary);
+  background: rgba(255, 36, 66, 0.15);
+  color: white;
+  box-shadow: 0 12px 30px rgba(255, 36, 66, 0.3);
 }
 
 .upload-count {
@@ -204,8 +298,8 @@
 
 /* 发送按钮 */
 .send-btn {
-  background: #e0e0e0;
-  color: #999;
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
 }
 
 .send-btn:disabled {
@@ -214,14 +308,14 @@
 }
 
 .send-btn.is-ready {
-  background: var(--primary);
+  background: linear-gradient(120deg, #ff2442, #ff6b81);
   color: white;
-  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+  box-shadow: 0 20px 40px rgba(255, 36, 66, 0.35);
 }
 
 .send-btn.is-ready:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 16px rgba(255, 36, 66, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 25px 50px rgba(255, 36, 66, 0.4);
 }
 
 .send-btn.is-ready:active {
@@ -239,7 +333,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 附件区域动画 */
@@ -323,12 +419,30 @@
 }
 
 /* Color Variants */
-.scenario-icon-box.soft-red { background: #FFF0F0; color: #FF4D4F; }
-.scenario-icon-box.soft-pink { background: #FFF0F6; color: #EB2F96; }
-.scenario-icon-box.soft-orange { background: #FFF7E6; color: #FA8C16; }
-.scenario-icon-box.soft-green { background: #F6FFED; color: #52C41A; }
-.scenario-icon-box.soft-blue { background: #E6F7FF; color: #1890FF; }
-.scenario-icon-box.soft-purple { background: #F9F0FF; color: #722ED1; }
+.scenario-icon-box.soft-red {
+  background: #fff0f0;
+  color: #ff4d4f;
+}
+.scenario-icon-box.soft-pink {
+  background: #fff0f6;
+  color: #eb2f96;
+}
+.scenario-icon-box.soft-orange {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+.scenario-icon-box.soft-green {
+  background: #f6ffed;
+  color: #52c41a;
+}
+.scenario-icon-box.soft-blue {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+.scenario-icon-box.soft-purple {
+  background: #f9f0ff;
+  color: #722ed1;
+}
 
 .scenario-title {
   font-weight: 600;
@@ -388,12 +502,12 @@
 }
 
 .icon-box.purple {
-  background: linear-gradient(135deg, #9F7AEA 0%, #805AD5 100%);
+  background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
   box-shadow: 0 4px 12px rgba(128, 90, 213, 0.2);
 }
 
 .icon-box.orange {
-  background: linear-gradient(135deg, #F6AD55 0%, #ED8936 100%);
+  background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
   box-shadow: 0 4px 12px rgba(237, 137, 54, 0.2);
 }
 
@@ -404,7 +518,9 @@
   font-size: 13px;
   cursor: pointer;
 }
-.btn-text:hover { color: var(--primary); }
+.btn-text:hover {
+  color: var(--primary);
+}
 
 /* Recent List Refined */
 .recent-list {
@@ -419,7 +535,7 @@
   gap: 16px;
   padding: 16px 20px;
   border-radius: 12px; /* Rounded corners */
-  background: #F9FAFB; /* Slight grey background by default */
+  background: #f9fafb; /* Slight grey background by default */
   cursor: pointer;
   transition: all 0.2s ease;
   border: 1px solid transparent;
@@ -428,7 +544,7 @@
 .recent-item:hover {
   background: white;
   border-color: var(--border-color);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   transform: translateY(-1px);
 }
 
@@ -442,14 +558,14 @@
   justify-content: center;
   color: #666;
   flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.04);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   transition: all 0.2s;
 }
 
 .recent-item:hover .recent-icon {
   color: var(--primary);
   border-color: rgba(255, 36, 66, 0.2);
-  background: #FFF0F2;
+  background: #fff0f2;
 }
 
 .recent-info {
@@ -507,7 +623,7 @@
 }
 
 .trend-item:hover {
-  background: #F9FAFB;
+  background: #f9fafb;
 }
 
 .trend-rank {
@@ -518,12 +634,18 @@
   margin-right: 12px;
   color: var(--text-placeholder);
   font-style: italic;
-  font-family: 'Inter', monospace;
+  font-family: "Inter", monospace;
 }
 
-.trend-rank.rank-1 { color: #FF2442; }
-.trend-rank.rank-2 { color: #FF6B81; }
-.trend-rank.rank-3 { color: #FF9CA8; }
+.trend-rank.rank-1 {
+  color: #ff2442;
+}
+.trend-rank.rank-2 {
+  color: #ff6b81;
+}
+.trend-rank.rank-3 {
+  color: #ff9ca8;
+}
 
 .trend-name {
   font-weight: 500;
@@ -551,7 +673,7 @@
   justify-content: center;
   color: var(--text-placeholder);
   font-size: 14px;
-  background: #FAFAFA;
+  background: #fafafa;
   border-radius: 12px;
   border: 1px dashed #eee;
   min-height: 120px;
@@ -589,20 +711,31 @@
   /* Hero Section 移动端 */
   .hero-section {
     margin-bottom: 20px;
-    padding: 16px 0;
+    padding: 28px 16px;
+    border-radius: 26px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
   }
 
   /* Composer 输入框移动端优化 */
   .composer-container {
-    padding: 10px;
-    border-radius: 16px;
-    margin: 0 auto 20px; /* 保持水平居中 */
+    padding: 14px;
+    border-radius: 22px;
+    margin: 0 auto 24px; /* 保持水平居中 */
     max-width: 100%;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .composer-container.is-focused {
-    box-shadow: 0 4px 16px rgba(255, 36, 66, 0.1);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+    border-color: rgba(255, 255, 255, 0.6);
   }
 
   .composer-main {
@@ -610,21 +743,28 @@
   }
 
   .composer-input {
-    font-size: 16px; /* 防止 iOS 自动缩放 */
-    min-height: 42px;
-    padding: 10px 12px;
-    border-radius: 10px;
+    font-size: 17px; /* 防止 iOS 自动缩放 */
+    min-height: 46px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
 
   .composer-actions {
-    gap: 6px;
-    padding-bottom: 4px;
+    gap: 10px;
+    padding-bottom: 6px;
   }
 
   .action-btn {
-    width: 44px; /* 触控目标最小 44px */
-    height: 44px;
+    width: 48px; /* 触控目标最小 44px */
+    height: 48px;
     -webkit-tap-highlight-color: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
   }
 
   .action-btn:active {
@@ -638,9 +778,13 @@
   }
 
   .attachment-item {
-    width: 50px;
-    height: 50px;
-    border-radius: 10px;
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
   .attachment-remove {
@@ -664,15 +808,20 @@
   }
 
   .scenario-card {
-    padding: 16px;
-    border-radius: 14px;
+    padding: 18px;
+    border-radius: 18px;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
 
   .scenario-card:active {
     transform: scale(0.97);
-    background: #FAFAFA;
+    background: #fafafa;
   }
 
   .scenario-icon-box {
@@ -758,7 +907,7 @@
   }
 
   .recent-item:active {
-    background: #EDF2F7;
+    background: #edf2f7;
     transform: scale(0.98);
   }
 
@@ -803,7 +952,7 @@
   }
 
   .trend-item:active {
-    background: #F5F5F5;
+    background: #f5f5f5;
   }
 
   .trend-rank {
@@ -836,18 +985,24 @@
    ============================================ */
 @media (max-width: 428px) {
   .composer-container {
-    padding: 8px;
-    border-radius: 14px;
+    padding: 10px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
   }
 
   .composer-input {
-    padding: 8px 10px;
-    min-height: 40px;
+    padding: 10px 12px;
+    min-height: 44px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.5);
   }
 
   .action-btn {
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
   }
 
   .attachment-item {
@@ -896,8 +1051,11 @@
   }
 
   .feature-card {
-    padding: 16px;
-    border-radius: 14px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
   }
 
   .card-header {
@@ -905,9 +1063,12 @@
   }
 
   .recent-item {
-    padding: 12px 14px;
-    gap: 12px;
-    border-radius: 12px;
+    padding: 14px;
+    gap: 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
   }
 
   .recent-icon {
@@ -967,7 +1128,7 @@
   }
 
   .recent-item:hover {
-    background: #F9FAFB;
+    background: #f9fafb;
     transform: none;
     box-shadow: none;
   }
@@ -1027,11 +1188,23 @@
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

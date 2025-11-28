@@ -392,13 +392,20 @@ class ImageService:
                     return (index, True, filename, None, [filename], True)
 
                 else:
-                    # OpenAI 兼容接口 - 尝试使用多图候选方法
+                    # OpenAI 兼容接口 - 支持多图候选与参考图
+                    reference_images = []
+                    if user_images:
+                        reference_images.extend(user_images)
+                    if reference_image:
+                        reference_images.append(reference_image)
+
                     if hasattr(self.generator, 'generate_image_with_candidates'):
                         result = self.generator.generate_image_with_candidates(
                             prompt=prompt,
                             size=self.provider_config.get('default_size', '1024x1024'),
                             model=self.provider_config.get('model'),
                             quality=self.provider_config.get('quality', 'standard'),
+                            reference_images=reference_images if reference_images else None,
                         )
                         # 保存所有候选图片
                         candidate_filenames = self._save_candidate_images(
@@ -412,6 +419,7 @@ class ImageService:
                             size=self.provider_config.get('default_size', '1024x1024'),
                             model=self.provider_config.get('model'),
                             quality=self.provider_config.get('quality', 'standard'),
+                            reference_images=reference_images if reference_images else None,
                         )
                         filename = f"{task_id}_{index}.png"
                         self._save_image(image_data, filename)

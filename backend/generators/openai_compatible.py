@@ -20,6 +20,7 @@ DEFAULT_IMAGE_INDEX = 0
 DEFAULT_REQUEST_TIMEOUT = 180
 DEFAULT_DOWNLOAD_TIMEOUT = 60
 MARKDOWN_IMAGE_PATTERN = r'!\[[^\]]*\]\(([^)\s]+)[^)]*\)'
+SENSITIVE_ERROR_KEYWORD = "sensitive_words_detected"
 
 
 def retry_on_error(max_retries=5, base_delay=3):
@@ -45,6 +46,11 @@ def retry_on_error(max_retries=5, base_delay=3):
                         raise
 
                     error_str = str(e)
+                    # 敏感词错误不可重试，立即抛出
+                    if SENSITIVE_ERROR_KEYWORD in error_str:
+                        logger.warning("检测到敏感词错误，跳过所有重试")
+                        raise
+
                     # 检查是否是速率限制错误
                     if "429" in error_str or "rate" in error_str.lower():
                         if attempt < max_retries - 1:
@@ -106,12 +112,27 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         self.chat_stream_enabled = config.get('chat_stream_enabled', False)
         self.chat_stream_idle_timeout = config.get('chat_stream_idle_timeout', 300)
 
+        # SSE 流式解析防护配置
+        self.sse_max_content_bytes = config.get('sse_max_content_bytes', 10 * 1024 * 1024)  # 10MB
+        self.sse_max_events = config.get('sse_max_events', 10000)
+        self.sse_heartbeat_timeout = config.get('sse_heartbeat_timeout', 60)
+
+        # 下载安全配置
+        self.download_max_bytes = config.get('download_max_bytes', 20 * 1024 * 1024)  # 20MB
+        self.download_allowed_content_types = config.get(
+            'download_allowed_content_types',
+            ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']
+        )
+        self.download_chunk_size = config.get('download_chunk_size', 8192)  # 8KB chunks
+
         # 调试日志：输出关键配置
         logger.info(
             f"[CONFIG] OpenAI Compatible Generator 初始化: "
             f"endpoint_type={self.endpoint_type}, "
             f"chat_stream_enabled={self.chat_stream_enabled}, "
-            f"model={self.default_model}"
+            f"model={self.default_model}, "
+            f"sse_max_content_bytes={self.sse_max_content_bytes}, "
+            f"download_max_bytes={self.download_max_bytes}"
         )
 
     def validate_config(self) -> bool:
@@ -243,6 +264,192 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             }
         ]
 
+    def _build_chat_request(
+        self,
+        model: str,
+        size: str,
+        prompt: str,
+        reference_images: Optional[List[bytes]] = None,
+        stream: bool = False
+    ) -> Dict[str, Any]:
+        """
+        统一构造 chat API 请求所需的 url/headers/payload
+
+        Args:
+            model: 模型名称
+            size: 图片尺寸
+            prompt: 已预处理的提示词
+            reference_images: 参考图片数据列表
+            stream: 是否启用流式模式
+
+        Returns:
+            包含 url, headers, payload 的字典
+        """
+        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        messages = self._build_chat_messages_with_images(prompt, reference_images or [])
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 1.0,
+            "size": size
+        }
+
+        if stream:
+            payload["stream"] = True
+
+        return {
+            "url": url,
+            "headers": headers,
+            "payload": payload
+        }
+
+    def _validate_and_extract_content(self, content: str, prompt: str) -> str:
+        """
+        统一进行错误检测并返回验证后的内容
+
+        Args:
+            content: API 返回的原始内容
+            prompt: 原始提示词（用于错误信息）
+
+        Returns:
+            验证通过的内容
+
+        Raises:
+            ValueError: 内容为空或检测到错误
+        """
+        if not content:
+            raise ValueError("API 响应内容为空")
+
+        # 优先检查明显的错误提示
+        self._raise_if_chat_content_is_error(content, prompt)
+
+        # 检测其他错误消息
+        error_message = self._detect_api_error_message(content)
+        if error_message:
+            raise ValueError(f"图片生成 API 返回错误: {error_message}")
+
+        return content
+
+    def _process_chat_content(
+        self,
+        content: str,
+        image_index: Optional[int] = None,
+        return_candidates: bool = False
+    ):
+        """
+        统一处理 chat content，支持单图或候选图模式
+
+        Args:
+            content: 已验证的 API 响应内容
+            image_index: 指定返回第几张图片（None 表示使用配置的默认值）
+            return_candidates: 是否返回所有候选图片
+
+        Returns:
+            bytes: 单图模式，返回图片二进制数据
+            Dict: 候选模式，返回 {primary, candidates, count}
+
+        Raises:
+            ValueError: 无法识别的内容格式
+        """
+        # 情况一：base64 data URL
+        if content.startswith("data:image"):
+            image_data = self._decode_base64_image(content)
+            if return_candidates:
+                return {
+                    "primary": image_data,
+                    "candidates": [image_data],
+                    "count": 1
+                }
+            return image_data
+
+        # 情况二：Markdown 图片链接
+        image_urls = self._extract_image_urls_from_markdown(content)
+        if image_urls:
+            logger.info(f"从响应中提取到 {len(image_urls)} 个图片 URL")
+            if return_candidates:
+                return self._download_all_images_from_urls(image_urls)
+            return self._download_image_from_urls(image_urls, image_index)
+
+        # 无法识别的格式
+        preview = content[:200].replace("\n", "\\n")
+        raise ValueError(
+            f"chat API 响应中未找到可识别的图片数据格式，content 预览: {preview}"
+        )
+
+    def _stream_download_image(self, url: str) -> bytes:
+        """
+        流式下载图片，带大小和 Content-Type 校验
+
+        Args:
+            url: 图片 URL
+
+        Returns:
+            图片二进制数据
+
+        Raises:
+            ValueError: 内容类型不允许或大小超限
+            requests.RequestException: 网络请求失败
+        """
+        logger.debug(f"开始流式下载图片: {url[:100]}")
+
+        try:
+            # 使用上下文管理器确保连接正确关闭
+            with requests.get(
+                url,
+                timeout=DEFAULT_DOWNLOAD_TIMEOUT,
+                stream=True
+            ) as response:
+                response.raise_for_status()
+
+                # 校验 Content-Type
+                content_type = response.headers.get("Content-Type", "").lower()
+                if self.download_allowed_content_types:
+                    if not any(content_type.startswith(t) for t in self.download_allowed_content_types):
+                        raise ValueError(
+                            f"不允许的 Content-Type: {content_type}, "
+                            f"仅允许: {', '.join(self.download_allowed_content_types)}"
+                        )
+
+                # 检查 Content-Length（如果提供）
+                max_bytes = self.download_max_bytes
+                content_length = response.headers.get("Content-Length")
+                if content_length:
+                    try:
+                        size = int(content_length)
+                        if size > max_bytes:
+                            raise ValueError(
+                                f"图片大小超过限制: {size} bytes > {max_bytes} bytes"
+                            )
+                    except (ValueError, TypeError):
+                        logger.warning(f"无法解析 Content-Length: {content_length}")
+
+                # 流式读取并检查累计大小
+                data = bytearray()
+                for chunk in response.iter_content(chunk_size=self.download_chunk_size):
+                    if not chunk:
+                        continue
+                    data.extend(chunk)
+                    if len(data) > max_bytes:
+                        raise ValueError(
+                            f"图片累计大小超过限制: {len(data)} bytes > {max_bytes} bytes"
+                        )
+
+                if not data:
+                    raise ValueError("图片内容为空")
+
+                logger.debug(f"成功下载图片，大小: {len(data)} bytes")
+                return bytes(data)
+
+        except requests.RequestException as e:
+            raise ValueError(f"下载图片请求失败: {e}") from e
+
     @retry_on_error(max_retries=5, base_delay=3)
     def generate_image(
         self,
@@ -316,6 +523,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         size: str = "1024x1024",
         model: str = None,
         quality: str = "standard",
+        reference_image: Optional[bytes] = None,
+        reference_images: Optional[List[bytes]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -328,6 +537,8 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             size: 图片尺寸
             model: 模型名称
             quality: 质量
+            reference_image: 单张参考图片数据（向后兼容）
+            reference_images: 多张参考图片数据列表
             **kwargs: 其他参数
 
         Returns:
@@ -340,6 +551,11 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         if model is None:
             model = self.default_model
 
+        # 收集所有参考图片
+        all_reference_images = self._collect_reference_images(
+            reference_image, reference_images
+        )
+
         if self.endpoint_type == 'images':
             # images API 通常只返回一张图片
             image_data = self._generate_via_images_api(prompt, size, model, quality)
@@ -349,7 +565,12 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
                 "count": 1
             }
         elif self.endpoint_type == 'chat':
-            return self._generate_via_chat_api_with_candidates(prompt, size, model)
+            return self._generate_via_chat_api_with_candidates(
+                prompt,
+                size,
+                model,
+                reference_images=all_reference_images
+            )
         else:
             raise ValueError(f"不支持的端点类型: {self.endpoint_type}")
 
@@ -411,6 +632,11 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         """
         解析SSE流式响应，累积所有content并返回最终完整内容
 
+        包含多重安全防护：
+        - 最大内容字节数限制
+        - 最大事件数限制
+        - 心跳超时检测
+
         Args:
             response: requests的Response对象（stream=True）
 
@@ -418,23 +644,61 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             累积的完整content字符串
 
         Raises:
-            ValueError: SSE格式错误或解析失败
-            Exception: 流式读取超时或连接错误
+            ValueError: SSE格式错误、超过限制或解析失败
+            TimeoutError: 心跳超时
+            Exception: 流式读取连接错误
         """
         import json
 
         accumulated_content = []
 
+        # 防护限制
+        max_bytes = self.sse_max_content_bytes
+        max_events = self.sse_max_events
+        heartbeat_timeout = self.sse_heartbeat_timeout
+
+        # 状态追踪
+        last_event_time = time.time()
+        total_bytes = 0
+        event_count = 0
+
+        logger.debug(
+            f"开始解析 SSE 流，限制: max_bytes={max_bytes}, "
+            f"max_events={max_events}, heartbeat_timeout={heartbeat_timeout}s"
+        )
+
         try:
             for line in response.iter_lines(decode_unicode=True):
+                # 更新心跳时间（无论行内容如何）
+                current_time = time.time()
+                elapsed = current_time - last_event_time
+                last_event_time = current_time
+
+                # 检查心跳超时
+                if elapsed > heartbeat_timeout:
+                    raise TimeoutError(
+                        f"SSE 心跳超时: {elapsed:.1f}s > {heartbeat_timeout}s，"
+                        f"已接收 {event_count} 个事件"
+                    )
+
+                # 空行：跳过
                 if not line:
                     continue
 
                 line = line.strip()
 
-                # 跳过注释行
+                # 跳过注释行（不计入事件数）
                 if line.startswith(':'):
                     continue
+
+                # 计入事件数（仅非空行且非注释行）
+                event_count += 1
+
+                # 检查事件数限制
+                if event_count > max_events:
+                    raise ValueError(
+                        f"SSE 事件数超过限制: {event_count} > {max_events}"
+                    )
 
                 # 处理 data: 开头的行
                 if line.startswith('data:'):
@@ -442,7 +706,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
                     # 检查是否为结束标记
                     if data_str == '[DONE]':
-                        logger.info("SSE流结束标记 [DONE]")
+                        logger.info(f"SSE 流结束标记 [DONE]，共 {event_count} 个事件")
                         break
 
                     try:
@@ -457,19 +721,47 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
                             if content:
                                 accumulated_content.append(content)
-                                logger.debug(f"SSE接收内容片段: {content[:50]}")
+
+                                # 检查累计字节数
+                                content_bytes = len(content.encode('utf-8', errors='ignore'))
+                                total_bytes += content_bytes
+
+                                if total_bytes > max_bytes:
+                                    raise ValueError(
+                                        f"SSE 内容累计超过限制: {total_bytes} bytes > {max_bytes} bytes"
+                                    )
+
+                                logger.debug(f"SSE 接收内容片段: {content[:50]}...")
 
                     except json.JSONDecodeError:
                         # 如果不是JSON，可能是纯文本格式（如模型的思考过程）
-                        logger.debug(f"SSE数据非JSON格式: {data_str[:100]}")
+                        logger.debug(f"SSE 数据非 JSON 格式: {data_str[:100]}")
+
+                        # 纯文本也计入累计字节数
+                        text_bytes = len(data_str.encode('utf-8', errors='ignore'))
+                        total_bytes += text_bytes
+
+                        if total_bytes > max_bytes:
+                            raise ValueError(
+                                f"SSE 内容累计超过限制: {total_bytes} bytes > {max_bytes} bytes"
+                            )
+
                         accumulated_content.append(data_str)
 
-        except Exception as e:
-            logger.error(f"SSE流解析异常: {e}")
+        except (TimeoutError, ValueError) as e:
+            # 预期的限制类错误，直接抛出
+            logger.error(f"SSE 流解析失败: {e}")
             raise
+        except Exception as e:
+            # 其他异常，包装后抛出
+            logger.error(f"SSE 流解析异常: {e}")
+            raise Exception(f"SSE 流解析异常: {e}") from e
 
         final_content = ''.join(accumulated_content)
-        logger.info(f"SSE流累积内容长度: {len(final_content)}")
+        logger.info(
+            f"SSE 流解析完成: 长度={len(final_content)}, "
+            f"事件数={event_count}, 字节数={total_bytes}"
+        )
 
         return final_content
 
@@ -505,42 +797,30 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         """
         logger.info("[STREAMING] 使用流式模式生成图片")
 
-        # 在发送请求前对提示词进行长度检查和预处理
+        # 预处理提示词
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # 构建 messages（支持参考图片）
-        messages = self._build_chat_messages_with_images(
-            safe_prompt,
-            reference_images or []
+        # 构造请求
+        request = self._build_chat_request(
+            model=model,
+            size=size,
+            prompt=safe_prompt,
+            reference_images=reference_images or [],
+            stream=True
         )
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": 1.0,
-            "size": size,
-            "stream": True  # 启用流式模式
-        }
 
         ref_count = len(reference_images) if reference_images else 0
         logger.info(
             f"[STREAMING] Chat API 流式请求: model={model}, size={size}, "
-            f"stream={payload['stream']}, prompt_length={len(safe_prompt)}, "
+            f"stream={request['payload'].get('stream')}, prompt_length={len(safe_prompt)}, "
             f"reference_images={ref_count}"
         )
 
-        # 使用流式请求，设置合理的超时时间
+        # 发送流式请求
         response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
+            request["url"],
+            headers=request["headers"],
+            json=request["payload"],
             stream=True,
             timeout=(10, self.chat_stream_idle_timeout)
         )
@@ -550,7 +830,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
                 f"API请求失败: {response.status_code} - {response.text[:500]}"
             )
 
-        # 解析SSE流，累积所有content
+        # 解析SSE流
         content = self._parse_sse_stream(response)
 
         # 关闭连接
@@ -559,29 +839,9 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         if not content:
             raise ValueError("SSE流中未返回任何内容")
 
-        # 优先检查是否为明显的错误提示
-        self._raise_if_chat_content_is_error(content, prompt)
-
-        # 检测API返回的其他错误消息
-        error_message = self._detect_api_error_message(content)
-        if error_message:
-            raise ValueError(f"图片生成API返回错误: {error_message}")
-
-        # 情况一：base64 data URL（向后兼容）
-        if content.startswith("data:image"):
-            return self._decode_base64_image(content)
-
-        # 情况二：Markdown图片链接（主要处理场景）
-        image_urls = self._extract_image_urls_from_markdown(content)
-        if image_urls:
-            logger.info(f"从流式响应中提取到 {len(image_urls)} 个图片URL")
-            return self._download_image_from_urls(image_urls, image_index)
-
-        # 无法识别的格式
-        preview = content[:200].replace("\n", "\\n")
-        raise ValueError(
-            f"SSE流式响应中未找到可识别的图片数据格式，content 预览: {preview}"
-        )
+        # 验证并处理内容
+        content = self._validate_and_extract_content(content, prompt)
+        return self._process_chat_content(content, image_index=image_index, return_candidates=False)
 
     def _generate_via_chat_api(
         self,
@@ -615,28 +875,17 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         """
         logger.info("[NON-STREAMING] 使用非流式模式生成图片")
 
-        # 在发送请求前对提示词进行长度检查和预处理
+        # 预处理提示词
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # 构建 messages（支持参考图片）
-        messages = self._build_chat_messages_with_images(
-            safe_prompt,
-            reference_images or []
+        # 构造请求
+        request = self._build_chat_request(
+            model=model,
+            size=size,
+            prompt=safe_prompt,
+            reference_images=reference_images or [],
+            stream=False
         )
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": 1.0,
-            "size": size
-        }
 
         ref_count = len(reference_images) if reference_images else 0
         logger.info(
@@ -645,7 +894,10 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         )
 
         response = requests.post(
-            url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
+            request["url"],
+            headers=request["headers"],
+            json=request["payload"],
+            timeout=DEFAULT_REQUEST_TIMEOUT
         )
 
         if response.status_code != 200:
@@ -664,34 +916,16 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         message = choice["message"]
         content = self._extract_content_from_message(message)
 
-        # 优先检查是否为明显的错误提示（如长度限制错误）
-        self._raise_if_chat_content_is_error(content, prompt)
-
-        # 检测API返回的其他错误消息
-        error_message = self._detect_api_error_message(content)
-        if error_message:
-            raise ValueError(f"图片生成API返回错误: {error_message}")
-
-        # 情况一：base64 data URL（向后兼容）
-        if content.startswith("data:image"):
-            return self._decode_base64_image(content)
-
-        # 情况二：Markdown图片链接（支持多图）
-        image_urls = self._extract_image_urls_from_markdown(content)
-        if image_urls:
-            return self._download_image_from_urls(image_urls, image_index)
-
-        # 无法识别的格式
-        preview = content[:200].replace("\n", "\\n")
-        raise ValueError(
-            f"chat API 响应中未找到可识别的图片数据格式，content 预览: {preview}"
-        )
+        # 验证并处理内容
+        content = self._validate_and_extract_content(content, prompt)
+        return self._process_chat_content(content, image_index=image_index, return_candidates=False)
 
     def _generate_via_chat_api_with_candidates(
         self,
         prompt: str,
         size: str,
-        model: str
+        model: str,
+        reference_images: Optional[List[bytes]] = None
     ) -> Dict[str, Any]:
         """
         通过 chat API 生成图片，并返回所有候选图片
@@ -702,6 +936,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             prompt: 提示词
             size: 图片尺寸
             model: 模型名称
+            reference_images: 参考图片数据列表
 
         Returns:
             {
@@ -712,15 +947,20 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         """
         # 根据配置选择流式或非流式模式
         if self.chat_stream_enabled:
-            return self._generate_via_chat_api_streaming_with_candidates(prompt, size, model)
+            return self._generate_via_chat_api_streaming_with_candidates(
+                prompt, size, model, reference_images=reference_images
+            )
         else:
-            return self._generate_via_chat_api_non_streaming_with_candidates(prompt, size, model)
+            return self._generate_via_chat_api_non_streaming_with_candidates(
+                prompt, size, model, reference_images=reference_images
+            )
 
     def _generate_via_chat_api_non_streaming_with_candidates(
         self,
         prompt: str,
         size: str,
-        model: str
+        model: str,
+        reference_images: Optional[List[bytes]] = None
     ) -> Dict[str, Any]:
         """
         通过 chat API 非流式模式生成图片，并返回所有候选图片
@@ -729,6 +969,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             prompt: 提示词
             size: 图片尺寸
             model: 模型名称
+            reference_images: 参考图片数据列表
 
         Returns:
             {
@@ -737,35 +978,29 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
                 "count": int
             }
         """
-        # 在发送请求前对提示词进行长度检查和预处理
+        # 预处理提示词
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
+        # 构造请求
+        request = self._build_chat_request(
+            model=model,
+            size=size,
+            prompt=safe_prompt,
+            reference_images=reference_images or [],
+            stream=False
+        )
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
-            "temperature": 1.0,
-            "size": size
-        }
-
+        ref_count = len(reference_images) if reference_images else 0
         logger.info(
-            f"[NON-STREAMING] Chat API 请求: model={model}, size={size}, "
-            f"prompt_length={len(safe_prompt)}"
+            f"[NON-STREAMING] Chat API 请求 (候选模式): model={model}, size={size}, "
+            f"prompt_length={len(safe_prompt)}, reference_images={ref_count}"
         )
 
         response = requests.post(
-            url, headers=headers, json=payload, timeout=DEFAULT_REQUEST_TIMEOUT
+            request["url"],
+            headers=request["headers"],
+            json=request["payload"],
+            timeout=DEFAULT_REQUEST_TIMEOUT
         )
 
         if response.status_code != 200:
@@ -784,39 +1019,16 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         message = choice["message"]
         content = self._extract_content_from_message(message)
 
-        # 优先检查是否为明显的错误提示
-        self._raise_if_chat_content_is_error(content, prompt)
-
-        # 检测API返回的其他错误消息
-        error_message = self._detect_api_error_message(content)
-        if error_message:
-            raise ValueError(f"图片生成API返回错误: {error_message}")
-
-        # 情况一：base64 data URL
-        if content.startswith("data:image"):
-            image_data = self._decode_base64_image(content)
-            return {
-                "primary": image_data,
-                "candidates": [image_data],
-                "count": 1
-            }
-
-        # 情况二：Markdown图片链接（下载所有候选图片）
-        image_urls = self._extract_image_urls_from_markdown(content)
-        if image_urls:
-            return self._download_all_images_from_urls(image_urls)
-
-        # 无法识别的格式
-        preview = content[:200].replace("\n", "\\n")
-        raise ValueError(
-            f"chat API 响应中未找到可识别的图片数据格式，content 预览: {preview}"
-        )
+        # 验证并处理内容（候选模式）
+        content = self._validate_and_extract_content(content, prompt)
+        return self._process_chat_content(content, return_candidates=True)
 
     def _generate_via_chat_api_streaming_with_candidates(
         self,
         prompt: str,
         size: str,
-        model: str
+        model: str,
+        reference_images: Optional[List[bytes]] = None
     ) -> Dict[str, Any]:
         """
         通过 chat API 流式模式生成图片，并返回所有候选图片
@@ -825,6 +1037,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             prompt: 提示词
             size: 图片尺寸
             model: 模型名称
+            reference_images: 参考图片数据列表
 
         Returns:
             {
@@ -835,39 +1048,28 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         """
         logger.info("[STREAMING] 使用流式模式生成候选图片")
 
-        # 在发送请求前对提示词进行长度检查和预处理
+        # 预处理提示词
         safe_prompt = self._prepare_chat_prompt(prompt)
 
-        url = f"{self.base_url.rstrip('/')}/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": safe_prompt
-                }
-            ],
-            "temperature": 1.0,
-            "size": size,
-            "stream": True  # 启用流式模式
-        }
+        # 构造请求
+        request = self._build_chat_request(
+            model=model,
+            size=size,
+            prompt=safe_prompt,
+            reference_images=reference_images or [],
+            stream=True
+        )
 
         logger.info(
             f"[STREAMING] Chat API 请求 (候选模式): model={model}, size={size}, "
-            f"stream={payload['stream']}, prompt_length={len(safe_prompt)}"
+            f"stream={request['payload'].get('stream')}, prompt_length={len(safe_prompt)}"
         )
 
         # 使用流式请求，设置合理的超时时间
         response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
+            request["url"],
+            headers=request["headers"],
+            json=request["payload"],
             stream=True,
             timeout=(10, self.chat_stream_idle_timeout)
         )
@@ -886,34 +1088,9 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         if not content:
             raise ValueError("SSE流中未返回任何内容")
 
-        # 优先检查是否为明显的错误提示
-        self._raise_if_chat_content_is_error(content, prompt)
-
-        # 检测API返回的其他错误消息
-        error_message = self._detect_api_error_message(content)
-        if error_message:
-            raise ValueError(f"图片生成API返回错误: {error_message}")
-
-        # 情况一：base64 data URL
-        if content.startswith("data:image"):
-            image_data = self._decode_base64_image(content)
-            return {
-                "primary": image_data,
-                "candidates": [image_data],
-                "count": 1
-            }
-
-        # 情况二：Markdown图片链接（下载所有候选图片）
-        image_urls = self._extract_image_urls_from_markdown(content)
-        if image_urls:
-            logger.info(f"[STREAMING] 从流式响应中提取到 {len(image_urls)} 个候选图片URL")
-            return self._download_all_images_from_urls(image_urls)
-
-        # 无法识别的格式
-        preview = content[:200].replace("\n", "\\n")
-        raise ValueError(
-            f"SSE流式响应中未找到可识别的图片数据格式 (候选模式)，content 预览: {preview}"
-        )
+        # 验证并处理内容（候选模式）
+        content = self._validate_and_extract_content(content, prompt)
+        return self._process_chat_content(content, return_candidates=True)
 
     def _download_all_images_from_urls(self, urls: List[str]) -> Dict[str, Any]:
         """
@@ -948,15 +1125,9 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             """
             try:
                 logger.info(f"下载候选图片 {idx + 1}/{len(urls)}: {url[:100]}")
-                img_response = requests.get(url, timeout=DEFAULT_DOWNLOAD_TIMEOUT)
-
-                if img_response.status_code == 200 and img_response.content:
-                    logger.info(f"成功下载候选图片 {idx + 1}")
-                    return (idx, img_response.content, None)
-                else:
-                    error_msg = f"下载失败: status={img_response.status_code}"
-                    logger.warning(f"候选图片 {idx + 1} {error_msg}")
-                    return (idx, None, error_msg)
+                img_data = self._stream_download_image(url)
+                logger.info(f"成功下载候选图片 {idx + 1}")
+                return (idx, img_data, None)
 
             except Exception as e:
                 logger.warning(f"候选图片 {idx + 1} 下载异常: {e}")
@@ -1310,22 +1481,13 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         for idx in indices_to_try:
             url = urls[idx]
             try:
-                logger.info(f"尝试下载第 {idx} 张图片: {url}")
-                img_response = requests.get(url, timeout=DEFAULT_DOWNLOAD_TIMEOUT)
-
-                if img_response.status_code == 200 and img_response.content:
-                    logger.info(f"成功下载第 {idx} 张图片")
-                    return img_response.content
-                else:
-                    error_msg = (
-                        f"下载图片失败: status={img_response.status_code}, "
-                        f"索引={idx}"
-                    )
-                    logger.warning(error_msg)
-                    last_error = Exception(error_msg)
+                logger.info(f"尝试下载第 {idx} 张图片: {url[:100]}")
+                image_data = self._stream_download_image(url)
+                logger.info(f"成功下载第 {idx} 张图片")
+                return image_data
 
             except Exception as e:
-                logger.warning(f"下载图片异常(索引={idx}): {e}")
+                logger.warning(f"下载图片异常 (索引={idx}): {e}")
                 last_error = e
 
         # 所有尝试都失败
