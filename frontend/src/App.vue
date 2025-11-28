@@ -59,6 +59,9 @@
       </RouterView>
     </main>
 
+    <!-- 主题切换器（全局浮动按钮） -->
+    <ThemeSwitcher />
+
     <!-- 登录/注册模态框 -->
     <AuthModal v-model:visible="showAuthModal" />
   </div>
@@ -69,8 +72,10 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import UserMenu from './components/UserMenu.vue'
+import ThemeSwitcher from './components/ThemeSwitcher.vue'
 import { useAuthStore } from './stores/auth'
 import { useGeneratorStore } from './stores/generator'
+import { useThemeStore } from './stores/theme'
 
 // ============================================================================
 // State
@@ -80,6 +85,7 @@ const showAuthModal = ref(false)
 const isSidebarOpen = ref(false)
 const authStore = useAuthStore()
 const generatorStore = useGeneratorStore()
+const themeStore = useThemeStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -170,12 +176,16 @@ watch(
 onMounted(() => {
   // 应用启动时初始化认证状态
   authStore.initAuth()
+  // 初始化主题系统
+  themeStore.init()
   // 监听 ESC 键
   window.addEventListener('keydown', handleEscKey)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEscKey)
+  // 清理主题系统监听器
+  themeStore.dispose()
   // 确保清理滚动锁定
   if (typeof document !== 'undefined') {
     document.body.classList.remove('sidebar-open')

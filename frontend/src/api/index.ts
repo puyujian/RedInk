@@ -323,7 +323,20 @@ interface ImageTaskResponse {
 }
 
 /**
+ * 生成唯一的任务 ID
+ * 格式: {userId}_{timestamp}_{random}
+ */
+function generateTaskId(): string {
+  const userId = getUserId()
+  const timestamp = Date.now()
+  const random = Math.random().toString(36).substring(2, 11)
+  return `${userId}_${timestamp}_${random}`
+}
+
+/**
  * 创建图片生成任务
+ *
+ * 注意：如果不传 taskId，会自动生成唯一 ID（推荐）
  */
 export async function createImageTask(
   pages: Page[],
@@ -349,9 +362,12 @@ export async function createImageTask(
     )
   }
 
+  // 如果没有传 taskId，自动生成唯一 ID（防止重复提交）
+  const finalTaskId = taskId || generateTaskId()
+
   const response = await apiClient.post<ImageTaskResponse>('/generate', {
     pages,
-    task_id: taskId || undefined,
+    task_id: finalTaskId,  // 必须传递 task_id
     full_outline: fullOutline,
     user_images: userImagesBase64.length > 0 ? userImagesBase64 : undefined,
     user_topic: userTopic || '',

@@ -208,7 +208,7 @@ export async function login(data: LoginParams): Promise<AuthResponse> {
 export async function logout(): Promise<CommonResponse> {
   const response = await axios.post<CommonResponse>(
     `${API_BASE_URL}/auth/logout`,
-    undefined,
+    {},  // 发送空对象确保 Content-Type 被正确设置
     {
       withCredentials: true,
       headers: buildHeaders(true),
@@ -230,7 +230,7 @@ export async function logout(): Promise<CommonResponse> {
 export async function refresh(): Promise<RefreshResponse> {
   const response = await axios.post<RefreshResponse>(
     `${API_BASE_URL}/auth/refresh`,
-    undefined,
+    {},  // 发送空对象确保 Content-Type 被正确设置
     {
       withCredentials: true,
       headers: buildHeaders(false),

@@ -5,6 +5,35 @@
     <link rel="icon" href="/logo.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>迪迦 - AI图文生成器</title>
+
+    <!-- 防闪烁脚本：在页面加载前立即应用主题 -->
+    <script>
+      (function() {
+        try {
+          // 从 localStorage 读取用户主题偏好
+          const STORAGE_KEY = 'redink-theme-preference';
+          const savedTheme = localStorage.getItem(STORAGE_KEY);
+
+          // 确定实际生效的主题
+          let effectiveTheme = 'light';
+
+          if (savedTheme === 'light' || savedTheme === 'dark') {
+            // 用户明确选择了浅色或深色
+            effectiveTheme = savedTheme;
+          } else if (savedTheme === 'system' || !savedTheme) {
+            // 用户选择跟随系统，或首次访问（默认跟随系统）
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            effectiveTheme = prefersDark ? 'dark' : 'light';
+          }
+
+          // 立即应用主题到 HTML 根元素
+          document.documentElement.setAttribute('data-theme', effectiveTheme);
+        } catch (error) {
+          // 静默失败，避免阻塞页面加载
+          console.warn('Failed to apply initial theme:', error);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

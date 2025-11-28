@@ -1,33 +1,47 @@
 :root {
-  /* 配色方案 - 现代简约风格 */
+  /* ============================================================================
+     浅色主题（默认）- 现代简约风格
+     ============================================================================ */
+
+  /* 背景色 */
   --bg-body: #F4F5F7;
   --bg-sidebar: #FFFFFF;
   --bg-card: #FFFFFF;
-  
-  --primary: #FF2442; /* 小红书红 */
+
+  /* 主色调 - 小红书红 */
+  --primary: #FF2442;
   --primary-hover: #FF4D6A;
   --primary-active: #D91C36;
   --primary-light: #FFF0F2;
   --primary-fade: rgba(255, 36, 66, 0.08);
-  
+
+  /* 文字颜色 */
   --text-main: #333333;
   --text-sub: #666666;
   --text-secondary: #999999;
   --text-placeholder: #CCCCCC;
-  
+
+  /* 边框颜色 */
   --border-color: #EEEEEE;
   --border-hover: #E0E0E0;
-  
-  --radius-xl: 24px;
-  --radius-lg: 16px;
-  --radius-md: 12px;
-  --radius-sm: 8px;
-  
+
+  /* 阴影 */
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.1);
   --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.08);
-  
+
+  /* 遮罩层 */
+  --overlay-light: rgba(0, 0, 0, 0.04);
+  --overlay-medium: rgba(0, 0, 0, 0.08);
+
+  /* 圆角 */
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+
+  /* 布局尺寸 */
   --sidebar-width: 260px;
   --header-height: 64px;
 
@@ -42,4 +56,46 @@
   /* 动画 */
   --transition-page: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   --transition-fast: 0.2s ease;
+  --transition-theme: 0.25s ease;
+}
+
+/* ============================================================================
+   深色主题 - 优雅暗色风格（增强层次感）
+   ============================================================================ */
+
+[data-theme="dark"] {
+  /* 背景色 - 深色调（三层背景系统） */
+  --bg-body: #0B0E11;        /* 最深层 - 页面背景 */
+  --bg-sidebar: #13161B;     /* 中间层 - 侧边栏 */
+  --bg-card: #1A1E26;        /* 最浅层 - 卡片/容器 */
+
+  /* 主色调 - 调亮以提高对比度 */
+  --primary: #FF5B73;
+  --primary-hover: #FF7A8E;
+  --primary-active: #FF4D6A;
+  --primary-light: #2A1A1E;
+  --primary-fade: rgba(255, 91, 115, 0.12);
+
+  /* 文字颜色 - 高对比度 */
+  --text-main: #E9ECF1;
+  --text-sub: #AAB3C0;
+  --text-secondary: #6B7280;
+  --text-placeholder: #4B5563;
+
+  /* 边框颜色 - 增强可见性 */
+  --border-color: #2A3040;      /* 更明显的边框 */
+  --border-hover: #353D4F;      /* hover 状态更亮 */
+
+  /* 阴影 - 深色环境下增强立体感 */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 20px rgba(0, 0, 0, 0.45);
+
+  /* 遮罩层 - 增强对比 */
+  --overlay-light: rgba(255, 255, 255, 0.05);   /* 稍微提亮 */
+  --overlay-medium: rgba(255, 255, 255, 0.10);  /* 更明显 */
+
+  /* 移动端遮罩 */
+  --sidebar-backdrop-bg: rgba(0, 0, 0, 0.7);
 }

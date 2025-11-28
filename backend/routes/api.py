@@ -183,7 +183,7 @@ def create_image_task():
     请求格式(JSON):
         {
             "pages": [...],
-            "task_id": "可选,前端自定义 ID",
+            "task_id": "必填,前端生成的唯一任务 ID (用于防止重复提交)",
             "full_outline": "...",
             "user_topic": "...",
             "user_images": ["data:image/png;base64,...", ...]
@@ -191,11 +191,13 @@ def create_image_task():
 
     响应:
         - 202 Accepted: {"success": true, "task_id": "...", "status": "pending"}
-        - 400 Bad Request: 参数错误
+        - 400 Bad Request: 参数错误 (包括 task_id 为空)
         - 413 Payload Too Large: 请求体过大
         - 500 Internal Error: 创建任务失败
 
     前端通过 GET /api/generate/stream/<task_id> 订阅 SSE 事件。
+
+    注意: task_id 必须由前端生成唯一 ID，RQ 会自动防止相同 task_id 的重复入队。
     """
     try:
         user = get_current_user()
@@ -217,13 +219,19 @@ def create_image_task():
         data = request.get_json() or {}
 
         pages = data.get('pages') or []
-        client_task_id = data.get('task_id')  # 兼容前端自定义 ID
+        client_task_id = data.get('task_id')  # 前端必须传递唯一 ID
         full_outline = (data.get('full_outline') or '').strip()
         user_topic = (data.get('user_topic') or '').strip()
         user_images_base64 = data.get('user_images') or []
         record_id = (data.get('record_id') or '').strip()  # 关联的历史记录 UUID
 
         # 参数验证
+        if not client_task_id or not isinstance(client_task_id, str) or not client_task_id.strip():
+            return jsonify({
+                "success": False,
+                "error": "task_id 参数不能为空，前端必须生成唯一的任务 ID"
+            }), 400
+
         if not isinstance(pages, list) or not pages:
             return jsonify({
                 "success": False,

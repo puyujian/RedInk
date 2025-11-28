@@ -637,7 +637,7 @@ onUnmounted(() => {
   margin-bottom: 24px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
   animation: slideDown 0.4s ease-out;
 }
@@ -645,6 +645,7 @@ onUnmounted(() => {
 .hint-content {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   flex: 1;
 }
@@ -736,19 +737,21 @@ onUnmounted(() => {
   margin-bottom: 40px;
   padding: 50px 60px;
   animation: fadeIn 0.6s ease-out;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--bg-card);
   border-radius: 24px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
-  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color);
+  transition: background-color var(--transition-theme), border-color var(--transition-theme), box-shadow var(--transition-theme);
 }
 
 /* Content Section */
 .content-section {
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--bg-card);
   border-radius: 24px;
   padding: 40px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
-  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color);
+  transition: background-color var(--transition-theme), border-color var(--transition-theme), box-shadow var(--transition-theme);
 }
 
 .hero-content {
@@ -881,11 +884,11 @@ onUnmounted(() => {
   background: transparent;
 }
 .recent-list::-webkit-scrollbar-thumb {
-  background: #E0E0E0;
+  background: var(--border-color);
   border-radius: 4px;
 }
 .recent-list::-webkit-scrollbar-thumb:hover {
-  background: #BDBDBD;
+  background: var(--text-placeholder);
 }
 
 .recent-item {
@@ -894,20 +897,20 @@ onUnmounted(() => {
   gap: 12px;
   padding: 12px;
   border-radius: 12px;
-  background: #F9FAFB;
+  background: var(--overlay-light);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .recent-item:hover {
-  background: #F0F2F5;
+  background: var(--overlay-medium);
   transform: translateX(2px);
 }
 
 .recent-icon {
   width: 32px;
   height: 32px;
-  background: white;
+  background: var(--bg-card);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -947,9 +950,9 @@ onUnmounted(() => {
   justify-content: center;
   color: var(--text-placeholder);
   font-size: 14px;
-  background: #FAFAFA;
+  background: var(--overlay-light);
   border-radius: 12px;
-  border: 1px dashed #eee;
+  border: 1px dashed var(--border-color);
 }
 
 /* Trend List */
@@ -971,7 +974,7 @@ onUnmounted(() => {
   background: transparent;
 }
 .trend-list::-webkit-scrollbar-thumb {
-  background: #E0E0E0;
+  background: var(--border-color);
   border-radius: 4px;
 }
 .trend-list::-webkit-scrollbar-thumb:hover {
@@ -1049,9 +1052,8 @@ onUnmounted(() => {
 .error-toast {
   position: fixed;
   bottom: 32px;
-  /* 相对于主内容区居中：页面中心 + 侧边栏宽度的一半 */
-  left: calc(50% + 130px); /* 备用值 */
-  left: calc(50% + var(--sidebar-width, 260px) / 2);
+  /* 完全居中，不考虑侧边栏偏移 */
+  left: 50%;
   transform: translateX(-50%);
   background: #FF4D4F;
   color: white;
@@ -1090,10 +1092,10 @@ onUnmounted(() => {
     padding: 16px;
   }
 
-  /* Tablet 也需要相对于主内容区居中 */
+  /* Tablet 也完全居中 */
   .error-toast {
-    left: calc(50% + 130px); /* 备用值 */
-    left: calc(50% + var(--sidebar-width, 260px) / 2);
+    left: 50%;
+    transform: translateX(-50%);
   }
 }
 
@@ -1178,7 +1180,7 @@ onUnmounted(() => {
 
   .hint-content {
     gap: 10px;
-    text-align: left;
+    text-align: center;
   }
 
   .hint-content svg {
@@ -1343,7 +1345,7 @@ onUnmounted(() => {
   /* 错误提示优化 */
   .error-toast {
     bottom: 24px;
-    /* 移动端侧边栏是覆盖层，所以相对于整个页面居中 */
+    /* 移动端完全居中 */
     left: 50%;
     transform: translateX(-50%);
     max-width: calc(100% - 32px);
@@ -1464,7 +1466,7 @@ onUnmounted(() => {
 
   .error-toast {
     bottom: max(24px, env(safe-area-inset-bottom));
-    /* iOS 移动端也是整个页面居中 */
+    /* iOS 移动端完全居中 */
     left: 50%;
     transform: translateX(-50%);
     max-width: calc(100% - max(32px, env(safe-area-inset-left) + env(safe-area-inset-right)));
@@ -1513,12 +1515,13 @@ onUnmounted(() => {
 }
 
 .loading-modal {
-  background: white;
+  background: var(--bg-card);
   border-radius: 24px;
   padding: 48px 40px;
   max-width: 400px;
   width: 100%;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
   animation: modalSlideUp 0.3s ease-out;
 }
 
@@ -1532,7 +1535,7 @@ onUnmounted(() => {
 .loading-spinner-large {
   width: 64px;
   height: 64px;
-  border: 4px solid #f0f0f0;
+  border: 4px solid var(--overlay-light);
   border-top-color: var(--primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;

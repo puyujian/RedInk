@@ -678,7 +678,8 @@ onMounted(() => {
   border-radius: 100px;
   border: 1px solid var(--border-color);
   font-size: 14px;
-  background: white;
+  background: var(--bg-card);
+  color: var(--text-main);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .search-mini input:focus {
@@ -692,7 +693,7 @@ onMounted(() => {
   left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: #ccc;
+  color: var(--text-placeholder);
 }
 
 /* Gallery Grid */
@@ -704,10 +705,10 @@ onMounted(() => {
 }
 
 .gallery-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(0,0,0,0.04);
+  border: 1px solid var(--border-color);
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   will-change: transform;
@@ -721,7 +722,7 @@ onMounted(() => {
 
 .card-cover {
   aspect-ratio: 3/4;
-  background: #f7f7f7;
+  background: var(--overlay-light);
   position: relative;
   overflow: hidden;
   cursor: pointer;
@@ -747,9 +748,9 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 48px;
-  color: #e0e0e0;
+  color: var(--text-placeholder);
   font-weight: 800;
-  background: #FAFAFA;
+  background: var(--overlay-light);
 }
 
 /* Overlay */
@@ -787,7 +788,7 @@ onMounted(() => {
 }
 
 .overlay-btn:hover {
-  background: white;
+  background: var(--bg-card);
   color: var(--text-main);
   transform: translateY(-2px);
 }
@@ -871,9 +872,11 @@ onMounted(() => {
 .page-btn {
   padding: 8px 16px;
   border: 1px solid var(--border-color);
-  background: white;
+  background: var(--bg-card);
+  color: var(--text-main);
   border-radius: 6px;
   cursor: pointer;
+  transition: background-color var(--transition-theme), border-color var(--transition-theme);
 }
 .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -897,7 +900,7 @@ onMounted(() => {
   padding: 40px;
 }
 .modal-body {
-  background: white;
+  background: var(--bg-card);
   width: 100%;
   max-width: 1000px;
   height: 90vh;
@@ -908,7 +911,7 @@ onMounted(() => {
 }
 .modal-header {
   padding: 20px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -930,7 +933,7 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.4;
-  color: #1a1a1a;
+  color: var(--text-main);
   word-break: break-word;
   transition: max-height 0.3s ease;
 }
@@ -946,12 +949,12 @@ onMounted(() => {
 .title-expand-btn {
   flex-shrink: 0;
   padding: 2px 8px;
-  background: #f0f0f0;
+  background: var(--overlay-light);
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 11px;
-  color: #666;
+  color: var(--text-sub);
   transition: all 0.2s;
   margin-top: 2px;
 }
@@ -965,9 +968,9 @@ onMounted(() => {
 .original-input-section {
   margin-top: 12px;
   padding: 12px;
-  background: #f8f9fa;
+  background: var(--overlay-light);
   border-radius: 8px;
-  border: 1px solid #e9ecef;
+  border: 1px solid var(--border-color);
 }
 
 .original-input-header {
@@ -982,12 +985,12 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  background: white;
-  border: 1px solid #dee2e6;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-  color: #495057;
+  color: var(--text-sub);
   transition: all 0.2s;
 }
 
@@ -1004,7 +1007,7 @@ onMounted(() => {
 .original-input-text {
   font-size: 13px;
   line-height: 1.6;
-  color: #495057;
+  color: var(--text-sub);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: none;
@@ -1025,8 +1028,8 @@ onMounted(() => {
   display: block;
   margin-top: 8px;
   padding: 4px 12px;
-  background: white;
-  border: 1px solid #dee2e6;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -1036,7 +1039,7 @@ onMounted(() => {
 }
 
 .expand-btn-small:hover {
-  background: #f8f9fa;
+  background: var(--overlay-light);
   border-color: var(--primary);
 }
 
@@ -1044,8 +1047,8 @@ onMounted(() => {
 .outline-section {
   max-height: 300px;
   overflow-y: auto;
-  border-bottom: 1px solid #eee;
-  background: #fafafa;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--overlay-light);
   flex-shrink: 0;
 }
 
@@ -1098,12 +1101,12 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  background: white;
+  background: var(--bg-card);
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
-  color: #333;
+  color: var(--text-main);
   transition: background-color 0.2s, color 0.2s, transform 0.1s;
   will-change: transform;
 }
@@ -1144,7 +1147,7 @@ onMounted(() => {
 }
 
 .outline-modal-content {
-  background: white;
+  background: var(--bg-card);
   width: 100%;
   max-width: 800px;
   max-height: 85vh;
@@ -1157,7 +1160,7 @@ onMounted(() => {
 
 .outline-modal-header {
   padding: 20px 24px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1168,7 +1171,7 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-main);
 }
 
 .outline-modal-body {
@@ -1178,11 +1181,11 @@ onMounted(() => {
 }
 
 .outline-page-card {
-  background: #f8f9fa;
+  background: var(--overlay-light);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
-  border: 1px solid #e9ecef;
+  border: 1px solid var(--border-color);
   transition: box-shadow 0.2s;
 }
 
@@ -1200,7 +1203,7 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .page-badge {
@@ -1225,8 +1228,8 @@ onMounted(() => {
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
-  background: #e9ecef;
-  color: #6c757d;
+  background: var(--overlay-medium);
+  color: var(--text-sub);
 }
 
 .page-type-badge.cover {
@@ -1247,13 +1250,13 @@ onMounted(() => {
 .word-count {
   margin-left: auto;
   font-size: 11px;
-  color: #999;
+  color: var(--text-secondary);
 }
 
 .outline-page-card-content {
   font-size: 14px;
   line-height: 1.7;
-  color: #333;
+  color: var(--text-main);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1300,7 +1303,7 @@ onMounted(() => {
 }
 
 .candidate-modal-content {
-  background: white;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 24px;
   max-width: 90vw;
@@ -1320,13 +1323,15 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  color: var(--text-main);
 }
 
 .close-btn {
   width: 32px;
   height: 32px;
   border: none;
-  background: #f5f5f5;
+  background: var(--overlay-light);
+  color: var(--text-main);
   border-radius: 50%;
   font-size: 20px;
   cursor: pointer;
@@ -1337,7 +1342,7 @@ onMounted(() => {
 }
 
 .close-btn:hover {
-  background: #e0e0e0;
+  background: var(--overlay-medium);
 }
 
 .candidate-grid {

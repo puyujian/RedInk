@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
 }
 
 .user-menu-trigger:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--overlay-light);
 }
 
 /* 用户头像 */
@@ -284,9 +284,9 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: calc(100% + 8px);
-  background: #ffffff;
+  background: var(--bg-card);
   border-radius: 14px;
-  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.16);
+  box-shadow: var(--shadow-md);
   padding: 8px;
   z-index: 100;
 }
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: #fafafa;
+  background: var(--overlay-light);
   border-radius: 10px;
 }
 
@@ -326,7 +326,7 @@ onBeforeUnmount(() => {
 /* 分隔线 */
 .user-menu-divider {
   height: 1px;
-  background: #f0f0f0;
+  background: var(--border-color);
   margin: 8px 0;
 }
 
@@ -347,7 +347,7 @@ onBeforeUnmount(() => {
 }
 
 .user-menu-item:hover {
-  background: #f5f5f5;
+  background: var(--overlay-light);
 }
 
 .user-menu-item-logout {
@@ -355,7 +355,7 @@ onBeforeUnmount(() => {
 }
 
 .user-menu-item-logout:hover {
-  background: #fff2f0;
+  background: var(--primary-light);
 }
 
 /* 下拉动画 */

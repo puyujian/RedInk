@@ -310,7 +310,7 @@ onMounted(() => {
 
 /* 模态框 */
 .auth-modal {
-  background: #ffffff;
+  background: var(--bg-card);
   border-radius: 20px;
   width: 100%;
   max-width: 420px;
@@ -347,7 +347,7 @@ onMounted(() => {
 
 .auth-modal-close {
   border: none;
-  background: #f5f5f5;
+  background: var(--overlay-light);
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -360,7 +360,7 @@ onMounted(() => {
 }
 
 .auth-modal-close:hover {
-  background: #eee;
+  background: var(--overlay-medium);
   color: var(--text-main);
 }
 
@@ -369,7 +369,7 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
-  background: #f5f5f5;
+  background: var(--overlay-light);
   padding: 4px;
   border-radius: 12px;
 }
@@ -392,7 +392,7 @@ onMounted(() => {
 }
 
 .auth-tab-item.active {
-  background: #ffffff;
+  background: var(--bg-card);
   color: var(--primary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
@@ -424,13 +424,14 @@ onMounted(() => {
   font-size: 15px;
   outline: none;
   transition: all 0.2s;
-  background: #fafafa;
+  background: var(--overlay-light);
+  color: var(--text-main);
 }
 
 .auth-input:focus {
   border-color: var(--primary);
-  background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 3px var(--primary-fade);
 }
 
 .auth-input:disabled {
@@ -442,14 +443,21 @@ onMounted(() => {
 .auth-form-error {
   font-size: 13px;
   color: #ff4d4f;
-  background: #fff2f0;
-  border: 1px solid #ffccc7;
+  background: rgba(255, 77, 79, 0.1);
+  border: 1px solid rgba(255, 77, 79, 0.3);
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
+}
+
+/* 暗黑模式下的错误提示 */
+[data-theme="dark"] .auth-form-error {
+  color: #ff7875;
+  background: rgba(255, 77, 79, 0.15);
+  border-color: rgba(255, 77, 79, 0.4);
 }
 
 /* 提交按钮 */

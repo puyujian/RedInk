@@ -151,11 +151,11 @@ const startGeneration = () => {
   transition: all 0.2s ease;
   border: none;
   border-radius: 8px; /* 较小的圆角 */
-  background: white;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
   /* 保持一定的长宽比感，虽然高度自适应，但由于 flex column 和内容撑开，
      这里设置一个 min-height 让它看起来像个竖向卡片 */
-  min-height: 360px; 
+  min-height: 360px;
   position: relative;
 }
 
@@ -177,7 +177,7 @@ const startGeneration = () => {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .page-info {
@@ -189,7 +189,7 @@ const startGeneration = () => {
 .page-number {
   font-size: 14px;
   font-weight: 700;
-  color: #ccc;
+  color: var(--text-placeholder);
   font-family: 'Inter', sans-serif;
 }
 
@@ -201,9 +201,28 @@ const startGeneration = () => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.page-type.cover { color: #FF4D4F; background: #FFF1F0; }
-.page-type.content { color: #8c8c8c; background: #f5f5f5; }
-.page-type.summary { color: #52C41A; background: #F6FFED; }
+.page-type.cover {
+  color: #FF4D4F;
+  background: rgba(255, 77, 79, 0.1);
+}
+.page-type.content {
+  color: var(--text-sub);
+  background: var(--overlay-light);
+}
+.page-type.summary {
+  color: #52C41A;
+  background: rgba(82, 196, 26, 0.1);
+}
+
+/* 暗黑模式下的页面类型标签 */
+[data-theme="dark"] .page-type.cover {
+  color: #FF7875;
+  background: rgba(255, 77, 79, 0.15);
+}
+[data-theme="dark"] .page-type.summary {
+  color: #73D13D;
+  background: rgba(82, 196, 26, 0.15);
+}
 
 .card-controls {
   display: flex;
@@ -223,11 +242,11 @@ const startGeneration = () => {
   background: none;
   border: none;
   cursor: pointer;
-  color: #999;
+  color: var(--text-secondary);
   padding: 2px;
   transition: color 0.2s;
 }
-.icon-btn:hover { color: #FF4D4F; }
+.icon-btn:hover { color: var(--primary); }
 
 /* 文本区域 - 核心 */
 .textarea-paper {
@@ -238,7 +257,7 @@ const startGeneration = () => {
   padding: 0;
   font-size: 16px; /* 更大的字号 */
   line-height: 1.7; /* 舒适行高 */
-  color: #333;
+  color: var(--text-main);
   resize: none; /* 禁止手动拉伸，保持卡片整体感 */
   font-family: inherit;
   margin-bottom: 10px;
