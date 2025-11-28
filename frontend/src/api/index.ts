@@ -151,6 +151,53 @@ export interface FinishEvent {
   failed_indices?: number[]
 }
 
+// ==================== 外部热点 API ====================
+
+/**
+ * 小红书热点数据项
+ */
+export interface RednoteHotspotItem {
+  rank: number
+  title: string
+  score: string
+  word_type: string
+  work_type_icon: string
+  link: string
+}
+
+/**
+ * 获取小红书实时热点
+ */
+export async function getRednoteHotspot(): Promise<{
+  success: boolean
+  data?: RednoteHotspotItem[]
+  error?: string
+}> {
+  try {
+    const response = await axios.get<{
+      code?: number
+      message?: string
+      data?: RednoteHotspotItem[]
+    }>('https://60s.viki.moe/v2/rednote', {
+      timeout: 8000,
+      headers: { 'Accept': 'application/json' },
+    })
+
+    const payload = response.data
+
+    // API 成功时 code 为 200
+    if (payload?.code === 200 && Array.isArray(payload.data)) {
+      return { success: true, data: payload.data }
+    }
+
+    return { success: false, error: payload?.message || '热点接口返回异常' }
+  } catch (error: any) {
+    const errorMessage = error?.response?.data?.message || error?.message || '获取热点数据失败'
+    console.error('[API] 获取小红书热点失败:', errorMessage)
+    return { success: false, error: errorMessage }
+  }
+}
+
 // ==================== 大纲生成 API ====================
 
 interface OutlineTaskResponse {

@@ -162,42 +162,38 @@
              <div class="icon-box orange">
                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
              </div>
-             <h3 class="section-title-sm">全站热搜</h3>
+             <h3 class="section-title-sm">【实时】小红书热点</h3>
           </div>
-          <span class="refresh-icon">
+          <span
+            class="refresh-icon"
+            :class="{ spinning: loadingTrending }"
+            @click="loadTrending(true)"
+            title="刷新热搜"
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
           </span>
         </div>
-        <div class="trend-list">
-          <div class="trend-item">
-            <span class="trend-rank rank-1">1</span>
-            <span class="trend-name">#OOTD 每日穿搭</span>
+        <div v-if="trendingTopics.length" class="trend-list">
+          <div
+            v-for="item in trendingTopics"
+            :key="item.rank"
+            class="trend-item"
+            @click="openHotspotModal(item)"
+          >
+            <span :class="['trend-rank', rankClass(item.rank)]">{{ item.rank }}</span>
+            <span class="trend-name">{{ item.title }}</span>
             <span class="trend-hot">
                <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF4D4F" stroke="#FF4D4F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.5-3.3a7 7 0 0 0 3 2.8Z"/></svg>
-               234w
+               {{ item.score || '--' }}
             </span>
           </div>
-          <div class="trend-item">
-            <span class="trend-rank rank-2">2</span>
-            <span class="trend-name">#探店日记</span>
-            <span class="trend-hot">
-               <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF6B81" stroke="#FF6B81" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.5-3.3a7 7 0 0 0 3 2.8Z"/></svg>
-               189w
-            </span>
-          </div>
-          <div class="trend-item">
-            <span class="trend-rank rank-3">3</span>
-            <span class="trend-name">#低脂减肥餐</span>
-            <span class="trend-hot">
-               <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF9CA8" stroke="#FF9CA8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.5-3.3a7 7 0 0 0 3 2.8Z"/></svg>
-               156w
-            </span>
-          </div>
-          <div class="trend-item">
-            <span class="trend-rank">4</span>
-            <span class="trend-name">#家居改造</span>
-            <span class="trend-hot">120w</span>
-          </div>
+        </div>
+        <div v-else class="empty-state-mini">
+          <span v-if="loadingTrending">正在加载热搜...</span>
+          <span v-else>暂无热搜数据，点击右上角刷新</span>
+        </div>
+        <div v-if="trendingError && !loadingTrending" class="trend-error">
+          {{ trendingError }}
         </div>
       </div>
     </div>
@@ -215,7 +211,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGeneratorStore } from '../stores/generator'
-import { generateOutline, getHistoryList, getHistory } from '../api'
+import { generateOutline, getHistoryList, getHistory, getRednoteHotspot, type RednoteHotspotItem } from '../api'
 
 const router = useRouter()
 const route = useRoute()
@@ -230,6 +226,28 @@ const recentRecords = ref<any[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const isExpanded = ref(false)
 const isInputFocused = ref(false)
+
+// 热搜相关状态
+const TRENDING_CACHE_KEY = 'rednote_hotspot_cache'
+const TRENDING_CACHE_TTL = 5 * 60 * 1000 // 5分钟缓存
+const trendingTopics = ref<RednoteHotspotItem[]>([])
+const loadingTrending = ref(false)
+const trendingError = ref('')
+
+// 热点弹窗状态
+const openHotspotModal = (item: RednoteHotspotItem) => {
+  // 使用浏览器原生小窗口打开
+  const width = 500
+  const height = 700
+  const left = (window.screen.width - width) / 2
+  const top = (window.screen.height - height) / 2
+
+  window.open(
+    item.link,
+    'hotspot_window',
+    `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
+  )
+}
 
 // 监听登录状态变化，自动刷新最近创作
 watch(() => authStore.isAuthenticated, (newValue) => {
@@ -356,6 +374,68 @@ const removeImage = (index: number) => {
   uploadedImages.value.splice(index, 1)
 }
 
+// 获取排名样式类
+const rankClass = (rank: number) => {
+  if (rank === 1) return 'rank-1'
+  if (rank === 2) return 'rank-2'
+  if (rank === 3) return 'rank-3'
+  return ''
+}
+
+// 加载热搜数据
+const loadTrending = async (forceRefresh = false) => {
+  if (typeof window === 'undefined') return
+
+  loadingTrending.value = true
+  trendingError.value = ''
+  const now = Date.now()
+  let cached: { timestamp: number; data: RednoteHotspotItem[] } | null = null
+
+  // 尝试读取缓存
+  try {
+    const cachedStr = localStorage.getItem(TRENDING_CACHE_KEY)
+    if (cachedStr) {
+      const parsed = JSON.parse(cachedStr) as { timestamp: number; data: RednoteHotspotItem[] }
+      if (parsed && Array.isArray(parsed.data)) {
+        cached = parsed
+        // 如果不是强制刷新且缓存未过期，直接使用缓存
+        if (!forceRefresh && now - parsed.timestamp < TRENDING_CACHE_TTL) {
+          trendingTopics.value = parsed.data.slice(0, 10)
+          loadingTrending.value = false
+          return
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('解析热搜缓存失败', e)
+  }
+
+  // 获取最新数据
+  try {
+    const res = await getRednoteHotspot()
+    if (res.success && res.data) {
+      const list = res.data.slice(0, 10) // 显示前10条热搜
+      trendingTopics.value = list
+      // 更新缓存
+      localStorage.setItem(TRENDING_CACHE_KEY, JSON.stringify({ timestamp: now, data: list }))
+      return
+    }
+
+    // API 失败，显示错误并回退到缓存
+    trendingError.value = res.error || '热搜获取失败，请稍后重试'
+    if (cached?.data?.length) {
+      trendingTopics.value = cached.data.slice(0, 10)
+    }
+  } catch (e: any) {
+    trendingError.value = e?.message || '热搜获取失败，请稍后重试'
+    if (cached?.data?.length) {
+      trendingTopics.value = cached.data.slice(0, 10)
+    }
+  } finally {
+    loadingTrending.value = false
+  }
+}
+
 const loadRecent = async () => {
   try {
     const res = await getHistoryList(1, 4)
@@ -445,6 +525,7 @@ onMounted(() => {
 
   loadRecent()
   loadShowcaseImages()
+  loadTrending()
 
   // 监听窗口大小变化,重新计算高度
   window.addEventListener('resize', calcSectionHeight)
@@ -735,6 +816,23 @@ onUnmounted(() => {
 }
 .btn-text:hover { color: var(--primary); }
 
+/* Refresh Icon */
+.refresh-icon {
+  cursor: pointer;
+  color: var(--text-sub);
+  transition: color 0.2s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.refresh-icon:hover {
+  color: var(--primary);
+  transform: rotate(-15deg);
+}
+.refresh-icon.spinning svg {
+  animation: spin 1s linear infinite;
+}
+
 /* Recent List */
 .recent-list {
   display: flex;
@@ -810,16 +908,39 @@ onUnmounted(() => {
 .trend-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* 自定义滚动条 */
+.trend-list::-webkit-scrollbar {
+  width: 4px;
+}
+.trend-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.trend-list::-webkit-scrollbar-thumb {
+  background: #E0E0E0;
+  border-radius: 4px;
+}
+.trend-list::-webkit-scrollbar-thumb:hover {
+  background: #BDBDBD;
 }
 
 .trend-item {
   display: flex;
   align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid #F5F5F5;
+  padding: 10px 8px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.2s;
+  flex-shrink: 0;
 }
-.trend-item:last-child { border-bottom: none; }
+.trend-item:hover {
+  background: #F5F5F5;
+}
 
 .trend-rank {
   width: 24px;
@@ -840,11 +961,24 @@ onUnmounted(() => {
   color: var(--text-main);
   flex: 1;
   font-size: 14px;
+  text-decoration: none;
 }
 
 .trend-hot {
   font-size: 12px;
   color: var(--text-sub);
+  display: flex;
+  align-items: center;
+}
+
+.trend-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #FF4D4F;
+  background: rgba(255, 77, 79, 0.08);
+  border-radius: 8px;
+  text-align: center;
 }
 
 /* Animations */
@@ -856,6 +990,11 @@ onUnmounted(() => {
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .error-toast {
