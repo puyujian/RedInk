@@ -669,118 +669,6 @@ onMounted(() => {
   display: none;
 }
 
-/* ==================== 移动端卡片样式 ==================== */
-.mobile-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.log-card {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.log-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.log-time {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.log-card-body {
-  padding: 14px 16px;
-}
-
-.log-info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.log-info-row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.log-info-row:first-child {
-  padding-top: 0;
-}
-
-.log-label {
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.log-value {
-  font-size: 14px;
-  color: #1a1a2e;
-  font-weight: 500;
-}
-
-.log-ip {
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 12px;
-}
-
-.log-card-footer {
-  padding: 12px 16px;
-  border-top: 1px solid #e5e7eb;
-}
-
-.btn-card-detail {
-  width: 100%;
-  padding: 10px 16px;
-  background: #e0e7ff;
-  color: #4338ca;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.2s;
-}
-
-.btn-card-detail:hover {
-  background: #c7d2fe;
-}
-
-.empty-state-mobile {
-  text-align: center;
-  padding: 60px 20px;
-  color: #9ca3af;
-}
-
-.empty-state-mobile .empty-icon {
-  display: block;
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.loading-container-mobile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 60px 20px;
-  gap: 16px;
-  color: #6b7280;
-}
-
 /* ==================== 响应式布局 ==================== */
 
 /* 平板适配 */
@@ -815,6 +703,118 @@ onMounted(() => {
 
   .mobile-only {
     display: block !important;
+  }
+
+  /* ==================== 移动端卡片样式 ==================== */
+  .mobile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .log-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+
+  .log-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .log-time {
+    font-size: 12px;
+    color: #9ca3af;
+  }
+
+  .log-card-body {
+    padding: 14px 16px;
+  }
+
+  .log-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .log-info-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .log-info-row:first-child {
+    padding-top: 0;
+  }
+
+  .log-label {
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .log-value {
+    font-size: 14px;
+    color: #1a1a2e;
+    font-weight: 500;
+  }
+
+  .log-ip {
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 12px;
+  }
+
+  .log-card-footer {
+    padding: 12px 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .btn-card-detail {
+    width: 100%;
+    padding: 10px 16px;
+    background: #e0e7ff;
+    color: #4338ca;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background 0.2s;
+  }
+
+  .btn-card-detail:hover {
+    background: #c7d2fe;
+  }
+
+  .empty-state-mobile {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+  }
+
+  .empty-state-mobile .empty-icon {
+    display: block;
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+
+  .loading-container-mobile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 20px;
+    gap: 16px;
+    color: #6b7280;
   }
 
   /* 工具栏 */

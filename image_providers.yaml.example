@@ -2,6 +2,13 @@
 # 当前使用的服务商 (可选值: image_api, google_genai, openai, duckcoding, custom)
 active_provider: image_api
 
+# 不同角色对应的服务商映射
+# 允许根据用户角色使用不同的生图模型
+role_mapping:
+  user: image_api          # 普通用户使用 image_api (Nano-Banana-Pro)
+  pro: google_genai        # PRO 用户使用 Google GenAI (gemini-3-pro-image-preview)
+  admin: google_genai      # 管理员使用 Google GenAI (gemini-3-pro-image-preview)
+
 # 服务商配置
 providers:
   # Image API (默认图片生成服务)

@@ -57,6 +57,8 @@ class ImageTaskStateStore:
         user_topic: str = "",
         user_images_base64: Optional[List[str]] = None,
         record_id: str = "",
+        user_role: Optional[str] = None,
+        provider_name: Optional[str] = None,
         ttl: Optional[int] = None,
     ) -> None:
         """初始化图片任务状态。
@@ -68,6 +70,8 @@ class ImageTaskStateStore:
             user_topic: 用户原始输入
             user_images_base64: 用户参考图片（base64 编码）
             record_id: 关联的历史记录 UUID（用于实时同步）
+            user_role: 用户角色（user/pro/admin），用于角色映射
+            provider_name: 服务商名称（可选，用于任务恢复）
             ttl: 过期时间（秒）
         """
         state: Dict[str, Any] = {
@@ -80,6 +84,8 @@ class ImageTaskStateStore:
             "user_topic": user_topic or "",
             "user_images": user_images_base64 or [],
             "record_id": record_id or "",
+            "user_role": (user_role or "").strip().lower() or "",
+            "provider_name": provider_name or "",
         }
         redis_conn = get_redis_connection()
         key = cls._make_key(task_id)
@@ -112,7 +118,7 @@ class ImageTaskStateStore:
             logger.warning(f"图片任务状态解析失败: task_id={task_id}")
             return None
 
-        # 补全默认字段，避免 KeyError
+        # 补全默认字段，避免 KeyError（包含新增的角色和服务商字段）
         state.setdefault("pages", [])
         state.setdefault("generated", {})
         state.setdefault("failed", {})
@@ -122,6 +128,8 @@ class ImageTaskStateStore:
         state.setdefault("user_topic", "")
         state.setdefault("user_images", [])
         state.setdefault("record_id", "")
+        state.setdefault("user_role", "")  # 新增：用户角色
+        state.setdefault("provider_name", "")  # 新增：服务商名称
         return state
 
     @classmethod
@@ -226,18 +234,22 @@ class ImageService:
     MAX_CONCURRENT = 15  # 最大并发数
     AUTO_RETRY_COUNT = 3  # 自动重试次数
 
-    def __init__(self, provider_name: str = None):
+    def __init__(self, provider_name: str = None, user_role: Optional[str] = None):
         """
         初始化图片生成服务
 
         Args:
-            provider_name: 服务商名称，如果为None则使用配置文件中的激活服务商
+            provider_name: 服务商名称，如果为None则根据用户角色选择
+            user_role: 用户角色（user/pro/admin），用于角色映射选择服务商
         """
-        # 获取服务商配置
-        if provider_name is None:
-            provider_name = Config.get_active_image_provider()
+        # 保存用户角色（规范化为小写）
+        self.user_role = (user_role or "").strip().lower() or None
 
-        provider_config = Config.get_image_provider_config(provider_name)
+        # 根据角色和传入参数解析最终使用的服务商
+        provider_name = self._resolve_provider(provider_name)
+
+        # 获取服务商配置
+        provider_config = Config.get_image_provider_config(provider_name, role=self.user_role)
 
         # 创建生成器实例
         provider_type = provider_config.get('type', provider_name)
@@ -259,6 +271,60 @@ class ImageService:
 
         # 存储任务状态（用于重试）
         self._task_states: Dict[str, Dict] = {}
+
+    def _resolve_provider(self, provider_name: Optional[str]) -> str:
+        """
+        根据角色/配置解析最终使用的服务商，带安全回退机制。
+
+        Args:
+            provider_name: 明确指定的服务商名称（优先级最高）
+
+        Returns:
+            最终使用的服务商名称
+
+        Raises:
+            ValueError: 当没有找到任何可用的服务商时
+        """
+        config = Config.load_image_providers_config()
+        providers = config.get('providers', {}) or {}
+
+        # 如果明确指定了服务商且存在，直接使用
+        if provider_name and provider_name in providers:
+            logger.info(
+                f"[ImageService] 使用明确指定的服务商: provider={provider_name}, "
+                f"role={self.user_role or 'N/A'}"
+            )
+            return provider_name
+
+        # 如果指定的服务商不存在，记录警告
+        if provider_name and provider_name not in providers:
+            logger.warning(
+                f"[ImageService] 指定的服务商不存在: provider={provider_name}, "
+                f"role={self.user_role}, 将根据角色映射选择服务商"
+            )
+
+        # 根据用户角色选择服务商
+        try:
+            selected_provider = Config.get_image_provider_by_role(
+                self.user_role,
+                default_provider=config.get('active_provider'),
+            )
+            logger.info(
+                f"[ImageService] 根据角色选择服务商: role={self.user_role or 'N/A'}, "
+                f"provider={selected_provider}"
+            )
+            return selected_provider
+        except Exception as exc:
+            logger.warning(
+                f"[ImageService] 角色映射服务商失败: role={self.user_role}, error={exc}, "
+                f"将使用任意可用服务商"
+            )
+            # 最后的回退：使用第一个可用的服务商
+            if providers:
+                fallback = next(iter(providers.keys()))
+                logger.warning(f"[ImageService] 使用回退服务商: {fallback}")
+                return fallback
+            raise
 
     def _load_prompt_template(self) -> str:
         """加载 Prompt 模板"""
@@ -887,8 +953,34 @@ class ImageService:
 _service_instance = None
 
 def get_image_service() -> ImageService:
-    """获取全局图片生成服务实例"""
+    """获取全局图片生成服务实例（不带角色信息）"""
     global _service_instance
     if _service_instance is None:
         _service_instance = ImageService()
     return _service_instance
+
+
+def get_scoped_image_service(
+    provider_name: Optional[str] = None,
+    user_role: Optional[str] = None
+) -> ImageService:
+    """创建带有特定角色/服务商的图片生成服务实例（不缓存）。
+
+    该函数用于需要根据用户角色动态选择服务商的场景，
+    每次调用都会创建新的实例，避免污染全局缓存。
+
+    Args:
+        provider_name: 服务商名称（可选）
+        user_role: 用户角色（user/pro/admin）
+
+    Returns:
+        ImageService 实例
+
+    Example:
+        # 为 PRO 用户创建服务实例
+        service = get_scoped_image_service(user_role='pro')
+
+        # 为特定服务商创建实例
+        service = get_scoped_image_service(provider_name='google_genai')
+    """
+    return ImageService(provider_name=provider_name, user_role=user_role)

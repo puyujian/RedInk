@@ -892,6 +892,7 @@ export interface HistoryDetail {
     generated: string[]
     candidates_map?: Record<string, string[]>  // 每个图片索引对应的候选图片列表
   }
+  user_images?: string[]  // 用户上传的参考图片（base64 编码）
   status: string
   thumbnail: string | null
 }
@@ -900,12 +901,14 @@ export interface HistoryDetail {
 export async function createHistory(
   topic: string,
   outline: { raw: string; pages: Page[] },
-  taskId?: string
+  taskId?: string,
+  userImages?: string[]
 ): Promise<{ success: boolean; record_id?: string; error?: string }> {
   const response = await apiClient.post('/history', {
     topic,
     outline,
     task_id: taskId,
+    user_images: userImages,
   })
   return response.data
 }
@@ -948,6 +951,7 @@ export async function updateHistory(
     images?: { task_id: string | null; generated: string[]; candidates_map?: Record<string, string[]> }
     status?: string
     thumbnail?: string
+    user_images?: string[]
   }
 ): Promise<{ success: boolean; error?: string }> {
   const response = await apiClient.put(`/history/${recordId}`, data)

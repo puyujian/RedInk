@@ -243,10 +243,31 @@ onMounted(async () => {
   // 创建历史记录（如果还没有）
   if (!store.recordId) {
     try {
-      const result = await createHistory(store.topic, {
-        raw: store.outline.raw,
-        pages: store.outline.pages
-      })
+      // 将用户参考图片转换为 base64
+      let userImagesBase64: string[] = []
+      if (store.userImages && store.userImages.length > 0) {
+        userImagesBase64 = await Promise.all(
+          store.userImages.map(
+            (file) =>
+              new Promise<string>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onload = () => resolve(reader.result as string)
+                reader.onerror = reject
+                reader.readAsDataURL(file)
+              })
+          )
+        )
+      }
+
+      const result = await createHistory(
+        store.topic,
+        {
+          raw: store.outline.raw,
+          pages: store.outline.pages
+        },
+        undefined,
+        userImagesBase64.length > 0 ? userImagesBase64 : undefined
+      )
       if (result.success && result.record_id) {
         store.recordId = result.record_id
         console.log('创建历史记录:', store.recordId)

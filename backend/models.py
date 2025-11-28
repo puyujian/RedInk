@@ -210,6 +210,10 @@ class HistoryRecord(Base):
         sa.JSON,
         comment="图片数据（task_id, generated 等）"
     )
+    user_images_json: Mapped[Optional[dict]] = mapped_column(
+        sa.JSON,
+        comment="用户上传的参考图片（base64 编码列表）"
+    )
     image_task_id: Mapped[Optional[str]] = mapped_column(
         sa.String(64),
         index=True,

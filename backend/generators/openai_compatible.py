@@ -1114,23 +1114,23 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
         def download_single_image(idx: int, url: str) -> tuple:
             """
-            下载单张图片
+            下载或解码单张图片（支持 HTTP URL 和 base64 data URL）
 
             Args:
                 idx: 图片索引
-                url: 图片URL
+                url: 图片URL（可以是 http(s):// 或 data:image/...）
 
             Returns:
                 (idx, image_data, error) 元组
             """
             try:
-                logger.info(f"下载候选图片 {idx + 1}/{len(urls)}: {url[:100]}")
-                img_data = self._stream_download_image(url)
-                logger.info(f"成功下载候选图片 {idx + 1}")
+                logger.info(f"处理候选图片 {idx + 1}/{len(urls)}: {url[:100]}")
+                img_data = self._download_or_decode_image(url)
+                logger.info(f"成功获取候选图片 {idx + 1}")
                 return (idx, img_data, None)
 
             except Exception as e:
-                logger.warning(f"候选图片 {idx + 1} 下载异常: {e}")
+                logger.warning(f"候选图片 {idx + 1} 处理异常: {e}")
                 return (idx, None, str(e))
 
         # 使用线程池并发下载，最多10个线程
@@ -1422,13 +1422,17 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
     def _extract_image_urls_from_markdown(self, content: str) -> List[str]:
         """
-        从Markdown文本中提取所有图片URL
+        从Markdown文本中提取所有图片URL（包括 base64 data URL）
+
+        支持以下格式：
+        1. ![alt](http://example.com/image.jpg)
+        2. ![alt](data:image/jpeg;base64,...)
 
         Args:
             content: Markdown格式的文本
 
         Returns:
-            图片URL列表（可能为空）
+            图片URL列表（可能为空，包含 http(s) URL 和 data URL）
         """
         if not content:
             return []
@@ -1446,18 +1450,43 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             logger.warning(f"Markdown 图片 URL 正则解析异常: {e}")
             return []
 
+    def _download_or_decode_image(self, url: str) -> bytes:
+        """
+        下载或解码图片（支持 HTTP URL 和 base64 data URL）
+
+        Args:
+            url: 图片 URL（可以是 http(s):// 或 data:image/...）
+
+        Returns:
+            图片二进制数据
+
+        Raises:
+            ValueError: URL 格式不支持或解码失败
+        """
+        # 情况1: base64 data URL
+        if url.startswith("data:image"):
+            logger.info("检测到 base64 data URL，直接解码")
+            return self._decode_base64_image(url)
+
+        # 情况2: HTTP(S) URL
+        if url.startswith(("http://", "https://")):
+            return self._stream_download_image(url)
+
+        # 不支持的格式
+        raise ValueError(f"不支持的 URL 格式: {url[:100]}")
+
     def _download_image_from_urls(
         self,
         urls: List[str],
         image_index: Optional[int] = None
     ) -> bytes:
         """
-        从URL列表中下载图片
+        从URL列表中下载图片（支持 HTTP URL 和 base64 data URL）
 
         支持fallback机制：如果指定索引的图片下载失败，会尝试其他图片
 
         Args:
-            urls: 图片URL列表
+            urls: 图片URL列表（可包含 http(s):// 或 data:image/... 格式）
             image_index: 指定下载第几张图片（None表示使用配置的默认值）
 
         Returns:
@@ -1481,17 +1510,17 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         for idx in indices_to_try:
             url = urls[idx]
             try:
-                logger.info(f"尝试下载第 {idx} 张图片: {url[:100]}")
-                image_data = self._stream_download_image(url)
-                logger.info(f"成功下载第 {idx} 张图片")
+                logger.info(f"尝试处理第 {idx} 张图片: {url[:100]}")
+                image_data = self._download_or_decode_image(url)
+                logger.info(f"成功获取第 {idx} 张图片")
                 return image_data
 
             except Exception as e:
-                logger.warning(f"下载图片异常 (索引={idx}): {e}")
+                logger.warning(f"处理图片异常 (索引={idx}): {e}")
                 last_error = e
 
         # 所有尝试都失败
-        error_msg = f"所有图片链接下载失败，共 {len(urls)} 个"
+        error_msg = f"所有图片链接处理失败，共 {len(urls)} 个"
         if last_error:
             raise Exception(error_msg) from last_error
         else:

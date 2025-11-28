@@ -4,7 +4,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 from flask import Blueprint, request, jsonify, Response, send_file
-from backend.services.image import get_image_service, ImageTaskStateStore
+from backend.config import Config
+from backend.services.image import get_image_service, get_scoped_image_service, ImageTaskStateStore
 from backend.services.history import get_history_service
 from backend.task_queue import get_outline_queue, get_image_queue
 from backend.task_queue.task_store import TaskStore, TaskType, TaskStatus
@@ -14,6 +15,24 @@ from backend.auth import login_required, get_current_user
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+def _get_image_service_for_task(task_id: str, fallback_role: Optional[str] = None) -> "ImageService":
+    """根据任务状态获取与原任务一致的服务商实例。
+
+    该函数用于重试、重新生成等场景，确保使用与原任务相同的服务商配置。
+
+    Args:
+        task_id: 任务 ID
+        fallback_role: 当任务状态中没有角色信息时使用的默认角色
+
+    Returns:
+        ImageService 实例
+    """
+    state = ImageTaskStateStore.load_state(task_id) or {}
+    provider_name = state.get("provider_name") or None
+    user_role = (state.get("user_role") or fallback_role or "").strip().lower() or None
+    return get_scoped_image_service(provider_name=provider_name, user_role=user_role)
 
 
 @api_bp.route('/outline', methods=['POST'])
@@ -181,6 +200,20 @@ def create_image_task():
     try:
         user = get_current_user()
         user_id = str(user.id)
+
+        # 获取用户角色（规范化为小写）
+        user_role = (getattr(user, "role", "") or "user").strip().lower()
+
+        # 根据用户角色确定使用的服务商
+        try:
+            provider_name = Config.get_image_provider_by_role(user_role)
+        except Exception as exc:
+            logger.warning(
+                f"根据角色选择服务商失败: role={user_role}, error={exc}, "
+                f"将使用默认服务商"
+            )
+            provider_name = Config.get_active_image_provider()
+
         data = request.get_json() or {}
 
         pages = data.get('pages') or []
@@ -237,6 +270,8 @@ def create_image_task():
             user_topic=user_topic,
             user_images_base64=user_images_base64,
             record_id=record_id,
+            user_role=user_role,
+            provider_name=provider_name,
         )
 
         # 将任务推入图片队列,由 RQ worker 异步执行
@@ -248,7 +283,8 @@ def create_image_task():
         )
 
         logger.info(
-            f"图片任务已创建: task_id={task_id}, user_id={user_id}, total_pages={total}, "
+            f"图片任务已创建: task_id={task_id}, user_id={user_id}, role={user_role}, "
+            f"provider={provider_name}, total_pages={total}, "
             f"user_images_count={len(user_images_base64) if user_images_base64 else 0}"
         )
 
@@ -637,7 +673,8 @@ def retry_single_image():
                 "error": "task_id 和 page 参数不能为空"
             }), 400
 
-        image_service = get_image_service()
+        # 使用与原任务相同的服务商配置
+        image_service = _get_image_service_for_task(task_id)
         result = image_service.retry_single_image(task_id, page, use_reference)
 
         return jsonify(result), 200 if result["success"] else 500
@@ -663,7 +700,8 @@ def retry_failed_images():
                 "error": "task_id 和 pages 参数不能为空"
             }), 400
 
-        image_service = get_image_service()
+        # 使用与原任务相同的服务商配置
+        image_service = _get_image_service_for_task(task_id)
 
         def generate():
             """SSE 生成器"""
@@ -705,7 +743,8 @@ def regenerate_image():
                 "error": "task_id 和 page 参数不能为空"
             }), 400
 
-        image_service = get_image_service()
+        # 使用与原任务相同的服务商配置
+        image_service = _get_image_service_for_task(task_id)
         result = image_service.regenerate_image(task_id, page, use_reference)
 
         return jsonify(result), 200 if result["success"] else 500
@@ -770,6 +809,7 @@ def create_history():
         topic = data.get('topic')
         outline = data.get('outline')
         task_id = data.get('task_id')
+        user_images = data.get('user_images')  # 新增：用户参考图片
 
         if not topic or not outline:
             return jsonify({
@@ -778,7 +818,9 @@ def create_history():
             }), 400
 
         history_service = get_history_service()
-        record_id = history_service.create_record(user.id, topic, outline, task_id)
+        record_id = history_service.create_record(
+            user.id, topic, outline, task_id, user_images
+        )
 
         return jsonify({
             "success": True,
@@ -855,6 +897,7 @@ def update_history(record_id):
         images = data.get('images')
         status = data.get('status')
         thumbnail = data.get('thumbnail')
+        user_images = data.get('user_images')  # 新增：用户参考图片
 
         history_service = get_history_service()
         success = history_service.update_record(
@@ -863,7 +906,8 @@ def update_history(record_id):
             outline=outline,
             images=images,
             status=status,
-            thumbnail=thumbnail
+            thumbnail=thumbnail,
+            user_images=user_images
         )
 
         if not success:

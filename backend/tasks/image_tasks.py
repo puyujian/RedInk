@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.task_queue.task_store import TaskStore, TaskStatus, TaskType
-from backend.services.image import ImageService, ImageTaskStateStore
+from backend.services.image import ImageService, ImageTaskStateStore, get_scoped_image_service
 from backend.services.history import get_history_service
 from backend.utils.image_compressor import compress_image
 from backend.db import db_session
@@ -238,6 +238,8 @@ def generate_images_task(task_id: str) -> None:
     user_topic: str = state.get("user_topic") or ""
     user_images_base64: List[str] = state.get("user_images") or []
     record_id: str = state.get("record_id") or ""
+    provider_name: Optional[str] = state.get("provider_name") or None
+    user_role: Optional[str] = (state.get("user_role") or "").strip().lower() or None
 
     # 获取用户 ID（用于同步历史记录）
     task_meta = TaskStore.get_task(task_type, task_id)
@@ -277,8 +279,12 @@ def generate_images_task(task_id: str) -> None:
         user_images_bytes = [compress_image(img, max_size_kb=200) for img in user_images_bytes]
         logger.info(f"[图片任务] 用户参考图片数量: {len(user_images_bytes)}")
 
-    # 创建图片生成服务实例
-    image_service = ImageService()
+    # 创建图片生成服务实例（根据用户角色选择服务商）
+    image_service = get_scoped_image_service(provider_name=provider_name, user_role=user_role)
+    logger.info(
+        f"[图片任务] 服务实例已创建: task_id={task_id}, "
+        f"user_role={user_role}, provider={image_service.provider_name}"
+    )
 
     generated_images: List[str] = []
     failed_pages: List[Dict[str, Any]] = []

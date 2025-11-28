@@ -27,7 +27,8 @@ class HistoryService:
         user_id: int,
         topic: str,
         outline: Dict,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        user_images: Optional[List[str]] = None
     ) -> str:
         """创建历史记录
 
@@ -36,6 +37,7 @@ class HistoryService:
             topic: 主题标题
             outline: 大纲数据（dict）
             task_id: 图片生成任务 ID（可选）
+            user_images: 用户上传的参考图片（base64 编码列表，可选）
 
         Returns:
             str: 记录 UUID
@@ -47,6 +49,7 @@ class HistoryService:
                 title=topic,
                 outline_json=outline,
                 image_task_id=task_id,
+                user_images_json={'images': user_images} if user_images else None,
                 status='draft',
             )
             db.add(record)
@@ -78,7 +81,8 @@ class HistoryService:
         outline: Optional[Dict] = None,
         images: Optional[Dict] = None,
         status: Optional[str] = None,
-        thumbnail: Optional[str] = None
+        thumbnail: Optional[str] = None,
+        user_images: Optional[List[str]] = None
     ) -> bool:
         """更新历史记录
 
@@ -89,6 +93,7 @@ class HistoryService:
             images: 图片数据（可选）
             status: 状态（可选）
             thumbnail: 缩略图 URL（可选）
+            user_images: 用户上传的参考图片（base64 编码列表，可选）
 
         Returns:
             bool: 是否更新成功
@@ -111,6 +116,8 @@ class HistoryService:
                 record.status = status
             if thumbnail is not None:
                 record.thumbnail_url = thumbnail
+            if user_images is not None:
+                record.user_images_json = {'images': user_images}
 
             # 更新时间戳（数据库会自动更新，这里显式设置确保一致性）
             record.updated_at = datetime.now(timezone.utc)
@@ -273,6 +280,11 @@ class HistoryService:
                 len(record.outline_json.get('pages', []))
                 if record.outline_json else 0
             )
+            # 添加用户参考图片
+            if record.user_images_json:
+                data['user_images'] = record.user_images_json.get('images', [])
+            else:
+                data['user_images'] = []
 
         return data
 

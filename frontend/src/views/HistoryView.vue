@@ -462,6 +462,18 @@ const loadRecord = async (id: string) => {
     store.setTopic(res.record.title)
     store.setOutline(res.record.outline.raw, res.record.outline.pages)
     store.recordId = res.record.id
+
+    // 恢复用户参考图片
+    if (res.record.user_images && res.record.user_images.length > 0) {
+      store.userImages = await Promise.all(
+        res.record.user_images.map(async (base64, idx) => {
+          const response = await fetch(base64)
+          const blob = await response.blob()
+          return new File([blob], `reference-${idx}.png`, { type: blob.type })
+        })
+      )
+    }
+
     if (res.record.images.generated.length > 0) {
         store.taskId = res.record.images.task_id
         store.images = res.record.outline.pages.map((page, idx) => {
