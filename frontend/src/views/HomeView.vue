@@ -2,7 +2,11 @@
   <div class="container home-container">
     <!-- 图片网格轮播背景 -->
     <div class="showcase-background">
-      <div class="showcase-grid" :style="{ transform: `translateY(-${scrollOffset}px)` }">
+      <div
+        class="showcase-grid"
+        ref="showcaseGridRef"
+        :style="{ transform: `translateY(-${scrollOffset}px)` }"
+      >
         <div v-for="(image, index) in showcaseImages" :key="index" class="showcase-item">
           <img :src="`/assets/showcase/${image}`" :alt="`封面 ${index + 1}`" />
         </div>
@@ -207,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGeneratorStore } from '../stores/generator'
@@ -244,7 +248,21 @@ watch(() => authStore.isAuthenticated, (newValue) => {
 // 图片网格轮播相关
 const showcaseImages = ref<string[]>([])
 const scrollOffset = ref(0)
+const showcaseGridRef = ref<HTMLElement | null>(null)
 let scrollInterval: ReturnType<typeof setInterval> | null = null
+let sectionHeight = 0
+
+// 计算单组真实高度
+const calcSectionHeight = () => {
+  const el = showcaseGridRef.value
+  if (!el) return
+  // 拼接了 3 组,除以 3 得到单组真实高度,避免硬编码
+  const newHeight = el.scrollHeight / 3
+  // 只在高度变化时更新,避免不必要的重复计算
+  if (newHeight > 0 && newHeight !== sectionHeight) {
+    sectionHeight = newHeight
+  }
+}
 
 // 加载展示图片列表
 const loadShowcaseImages = async () => {
@@ -256,22 +274,30 @@ const loadShowcaseImages = async () => {
     // 复制图片数组3次以实现无缝循环
     showcaseImages.value = [...originalImages, ...originalImages, ...originalImages]
 
+    await nextTick()
+
+    // 初次计算高度
+    calcSectionHeight()
+
+    // 延迟再次计算,确保图片加载完成
+    setTimeout(() => {
+      calcSectionHeight()
+    }, 500)
+
     // 启动平滑滚动动画
     if (showcaseImages.value.length > 0) {
       scrollInterval = setInterval(() => {
+        // 定期检查高度变化(每秒一次)
+        if (Math.random() < 0.033) { // 约 1/30 秒 ≈ 每秒一次
+          calcSectionHeight()
+        }
         scrollOffset.value += 1
 
-        // 计算网格总高度（每行约180px：164px图片 + 16px间距）
-        const rowHeight = 180
-        const itemsPerRow = 11
-        const totalRows = Math.ceil(originalImages.length / itemsPerRow)
-        const sectionHeight = totalRows * rowHeight
-
-        // 滚动到第二组末尾时重置到第一组开始位置
-        if (scrollOffset.value >= sectionHeight) {
-          scrollOffset.value = 0
+        // 到达第三组时回退一组高度,始终停留在中间副本,实现无缝循环
+        if (sectionHeight > 0 && scrollOffset.value >= sectionHeight * 2) {
+          scrollOffset.value -= sectionHeight
         }
-      }, 30) // 每30ms移动1px，实现流畅滚动
+      }, 30) // 每30ms移动1px,实现流畅滚动
     }
   } catch (e) {
     console.error('加载展示图片失败:', e)
@@ -419,12 +445,17 @@ onMounted(() => {
 
   loadRecent()
   loadShowcaseImages()
+
+  // 监听窗口大小变化,重新计算高度
+  window.addEventListener('resize', calcSectionHeight)
 })
 
 onUnmounted(() => {
   if (scrollInterval) {
     clearInterval(scrollInterval)
   }
+  // 清理事件监听
+  window.removeEventListener('resize', calcSectionHeight)
 })
 </script>
 
@@ -830,7 +861,9 @@ onUnmounted(() => {
 .error-toast {
   position: fixed;
   bottom: 32px;
-  left: 50%;
+  /* 相对于主内容区居中：页面中心 + 侧边栏宽度的一半 */
+  left: calc(50% + 130px); /* 备用值 */
+  left: calc(50% + var(--sidebar-width, 260px) / 2);
   transform: translateX(-50%);
   background: #FF4D4F;
   color: white;
@@ -867,6 +900,12 @@ onUnmounted(() => {
     grid-template-columns: repeat(7, 1fr);
     gap: 12px;
     padding: 16px;
+  }
+
+  /* Tablet 也需要相对于主内容区居中 */
+  .error-toast {
+    left: calc(50% + 130px); /* 备用值 */
+    left: calc(50% + var(--sidebar-width, 260px) / 2);
   }
 }
 
@@ -1116,9 +1155,10 @@ onUnmounted(() => {
   /* 错误提示优化 */
   .error-toast {
     bottom: 24px;
-    left: 16px;
-    right: 16px;
-    transform: none;
+    /* 移动端侧边栏是覆盖层，所以相对于整个页面居中 */
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - 32px);
     padding: 14px 20px;
     border-radius: 14px;
     font-size: 14px;
@@ -1236,8 +1276,10 @@ onUnmounted(() => {
 
   .error-toast {
     bottom: max(24px, env(safe-area-inset-bottom));
-    left: max(16px, env(safe-area-inset-left));
-    right: max(16px, env(safe-area-inset-right));
+    /* iOS 移动端也是整个页面居中 */
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - max(32px, env(safe-area-inset-left) + env(safe-area-inset-right)));
   }
 }
 

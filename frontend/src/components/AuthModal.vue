@@ -62,6 +62,20 @@
               />
             </div>
 
+            <!-- 邀请码输入框(仅在注册模式且需要邀请码时显示) -->
+            <div v-if="isRegister && inviteRequired" class="auth-form-item">
+              <label class="auth-form-label" for="auth-invite">邀请码</label>
+              <input
+                id="auth-invite"
+                v-model.trim="inviteCode"
+                class="auth-input"
+                type="text"
+                placeholder="请输入邀请码"
+                autocomplete="off"
+                :disabled="loading"
+              />
+            </div>
+
             <div class="auth-form-item">
               <label class="auth-form-label" for="auth-password">密码</label>
               <input
@@ -120,8 +134,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import { getPublicRegistrationConfig } from '../api/auth'
 
 // ============================================================================
 // Props & Emits
@@ -145,6 +160,8 @@ const mode = ref<'login' | 'register'>('login')
 const username = ref('')
 const email = ref('')
 const password = ref('')
+const inviteCode = ref('')
+const inviteRequired = ref(false)
 const loading = ref(false)
 const formError = ref('')
 
@@ -170,6 +187,11 @@ const isFormValid = computed(() => {
     return false
   }
 
+  // 注册时如果需要邀请码,必须填写
+  if (isRegister.value && inviteRequired.value && !inviteCode.value) {
+    return false
+  }
+
   return true
 })
 
@@ -181,6 +203,7 @@ function resetForm() {
   username.value = ''
   email.value = ''
   password.value = ''
+  inviteCode.value = ''
   loading.value = false
   formError.value = ''
 }
@@ -207,6 +230,7 @@ async function handleSubmit() {
         username: username.value,
         password: password.value,
         email: email.value || undefined,
+        invite_code: inviteRequired.value && inviteCode.value ? inviteCode.value : undefined,
       })
     } else {
       await authStore.login({
@@ -229,6 +253,24 @@ async function handleSubmit() {
   }
 }
 
+/**
+ * 获取注册设置,判断是否需要邀请码
+ *
+ * 采用优雅降级策略:
+ * - 成功获取: 根据 invite_required 显示邀请码输入框
+ * - 获取失败: 默认不需要邀请码,保持用户可正常注册
+ */
+async function fetchRegistrationSettings() {
+  try {
+    const response = await getPublicRegistrationConfig()
+    inviteRequired.value = response.invite_required || false
+  } catch (error) {
+    // 网络错误或服务端问题,静默处理,默认不需要邀请码
+    console.warn('[AuthModal] 获取注册设置失败,默认不需要邀请码:', error)
+    inviteRequired.value = false
+  }
+}
+
 // ============================================================================
 // Watchers
 // ============================================================================
@@ -242,6 +284,14 @@ watch(
     }
   }
 )
+
+// ============================================================================
+// Lifecycle
+// ============================================================================
+
+onMounted(() => {
+  fetchRegistrationSettings()
+})
 </script>
 
 <style scoped>

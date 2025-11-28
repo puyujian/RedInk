@@ -67,6 +67,15 @@ export interface RegisterParams {
   password: string
   email?: string
   client_id?: string
+  /** 邀请码(当后台开启邀请码注册时必填) */
+  invite_code?: string
+}
+
+/** 公开注册配置响应 */
+export interface PublicRegistrationConfigResponse {
+  success: boolean
+  invite_required: boolean
+  error?: string
 }
 
 // ============================================================================
@@ -340,4 +349,22 @@ export async function ensureValidToken(): Promise<string | null> {
 
   // Token 仍然有效
   return currentToken
+}
+
+/**
+ * 获取公开的注册配置(无需认证)
+ *
+ * 仅返回是否需要邀请码,不包含邀请码本身等敏感信息
+ *
+ * @returns 公开注册配置响应
+ * @throws 网络错误或服务端错误
+ */
+export async function getPublicRegistrationConfig(): Promise<PublicRegistrationConfigResponse> {
+  const response = await axios.get<PublicRegistrationConfigResponse>(
+    `${API_BASE_URL}/auth/registration/config`,
+    {
+      headers: buildHeaders(false),
+    }
+  )
+  return response.data
 }

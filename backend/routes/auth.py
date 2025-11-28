@@ -31,6 +31,45 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
 # ============================================================================
+# 公开的注册配置
+# ============================================================================
+
+@auth_bp.route('/registration/config', methods=['GET'])
+def public_registration_config():
+    """
+    获取公开的注册配置(无需认证)
+
+    仅返回是否需要邀请码,不包含邀请码本身等敏感信息
+
+    响应:
+        {
+            "success": true,
+            "invite_required": false
+        }
+    """
+    try:
+        db = get_db()
+        try:
+            setting = db.query(RegistrationSetting).filter(RegistrationSetting.id == 1).first()
+            invite_required = bool(setting.invite_required) if setting else False
+
+            return jsonify({
+                'success': True,
+                'invite_required': invite_required,
+            }), 200
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"获取公开注册配置失败: {e}", exc_info=True)
+        # 异常时返回默认值(不需要邀请码),保证用户可以继续注册
+        return jsonify({
+            'success': False,
+            'invite_required': False,
+            'error': '获取注册配置失败',
+        }), 500
+
+
+# ============================================================================
 # 用户注册
 # ============================================================================
 
