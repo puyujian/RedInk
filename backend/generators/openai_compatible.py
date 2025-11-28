@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMAGE_INDEX = 0
 DEFAULT_REQUEST_TIMEOUT = 180
 DEFAULT_DOWNLOAD_TIMEOUT = 60
-MARKDOWN_IMAGE_PATTERN = r'!\[[^\]]*\]\(([^)\s]+)[^)]*\)'
+# Markdown 图片链接正则：支持括号内的前后空格
+# 匹配格式：![alt]( url ) 或 ![alt](url)
+# 使用非贪婪匹配 .*? 来捕获括号内的所有内容，然后在提取时再去除空格
+MARKDOWN_IMAGE_PATTERN = r'!\[[^\]]*\]\(\s*(.+?)\s*\)'
 SENSITIVE_ERROR_KEYWORD = "sensitive_words_detected"
 
 
@@ -1398,7 +1401,7 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
     def _decode_base64_image(self, data_url: str) -> bytes:
         """
-        解码base64格式的图片数据
+        解码base64格式的图片数据（无安全校验，仅供内部兼容使用）
 
         Args:
             data_url: data URL格式的字符串 (data:image/png;base64,...)
@@ -1418,6 +1421,74 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
         except (IndexError, base64.binascii.Error) as e:
             raise ValueError(
                 f"chat API 响应中的 base64 图片数据格式不正确: {str(e)}"
+            ) from e
+
+    def _decode_base64_image_with_validation(self, data_url: str) -> bytes:
+        """
+        解码base64格式的图片数据，并进行安全校验
+
+        校验项：
+        1. MIME 类型白名单（与 HTTP 下载保持一致）
+        2. base64 数据大小限制（与 HTTP 下载保持一致）
+
+        Args:
+            data_url: data URL格式的字符串 (data:image/png;base64,...)
+
+        Returns:
+            图片二进制数据
+
+        Raises:
+            ValueError: data URL格式不正确、MIME类型不允许或大小超限
+        """
+        try:
+            # 分割 data URL
+            if "," not in data_url:
+                raise ValueError("data URL 缺少逗号分隔符")
+
+            header, base64_data = data_url.split(",", 1)
+
+            # 提取 MIME 类型（例如：data:image/jpeg;base64 -> image/jpeg）
+            mime_type = None
+            if header.startswith("data:"):
+                mime_part = header[5:].split(";")[0].strip().lower()
+                if mime_part:
+                    mime_type = mime_part
+
+            # 校验 MIME 类型白名单
+            if self.download_allowed_content_types and mime_type:
+                if not any(mime_type.startswith(allowed) for allowed in self.download_allowed_content_types):
+                    raise ValueError(
+                        f"不允许的 MIME 类型: {mime_type}, "
+                        f"仅允许: {', '.join(self.download_allowed_content_types)}"
+                    )
+
+            # 估算 base64 解码后的大小（base64 编码后大小约为原始数据的 4/3）
+            estimated_size = len(base64_data) * 3 // 4
+            max_bytes = self.download_max_bytes
+
+            if estimated_size > max_bytes:
+                raise ValueError(
+                    f"base64 图片预估大小超过限制: {estimated_size} bytes > {max_bytes} bytes"
+                )
+
+            # 解码 base64
+            image_data = base64.b64decode(base64_data)
+
+            # 二次校验实际大小
+            actual_size = len(image_data)
+            if actual_size > max_bytes:
+                raise ValueError(
+                    f"base64 图片实际大小超过限制: {actual_size} bytes > {max_bytes} bytes"
+                )
+
+            logger.debug(
+                f"成功解码 base64 图片: mime={mime_type}, size={actual_size} bytes"
+            )
+            return image_data
+
+        except (IndexError, base64.binascii.Error) as e:
+            raise ValueError(
+                f"base64 图片数据格式不正确: {str(e)}"
             ) from e
 
     def _extract_image_urls_from_markdown(self, content: str) -> List[str]:
@@ -1461,12 +1532,15 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             图片二进制数据
 
         Raises:
-            ValueError: URL 格式不支持或解码失败
+            ValueError: URL 格式不支持、解码失败或安全校验失败
         """
-        # 情况1: base64 data URL
-        if url.startswith("data:image"):
-            logger.info("检测到 base64 data URL，直接解码")
-            return self._decode_base64_image(url)
+        # 规范化 URL（去除首尾空格）
+        url = url.strip()
+
+        # 情况1: base64 data URL（大小写不敏感）
+        if url.lower().startswith("data:image"):
+            logger.debug("检测到 base64 data URL，进行安全校验并解码")
+            return self._decode_base64_image_with_validation(url)
 
         # 情况2: HTTP(S) URL
         if url.startswith(("http://", "https://")):
