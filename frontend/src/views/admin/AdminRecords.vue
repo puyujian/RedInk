@@ -1156,11 +1156,22 @@ onMounted(() => {
 
 /* ==================== 移动端视图切换 ==================== */
 .desktop-only {
-  display: block;
+  display: block !important;
 }
 
 .mobile-only {
-  display: none;
+  display: none !important;
+}
+
+/* 桌面端强制保持桌面视图，防止其他全局样式误伤 */
+@media (min-width: 769px) {
+  .desktop-only {
+    display: block !important;
+  }
+
+  .mobile-only {
+    display: none !important;
+  }
 }
 
 /* ==================== 移动端卡片样式 ==================== */

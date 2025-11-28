@@ -559,11 +559,22 @@ onMounted(() => {
 
 /* 响应式显示控制 */
 .desktop-only {
-  display: block;
+  display: block !important;
 }
 
 .mobile-only {
-  display: none;
+  display: none !important;
+}
+
+/* 桌面端强制保持桌面视图，防止其他全局样式误伤 */
+@media (min-width: 769px) {
+  .desktop-only {
+    display: block !important;
+  }
+
+  .mobile-only {
+    display: none !important;
+  }
 }
 
 /* 工具栏 */
