@@ -761,8 +761,7 @@ onUnmounted(() => {
 }
 
 .feature-card {
-  height: 100%;
-  min-height: 280px;
+  height: 400px; /* 固定高度，确保两个卡片一致 */
   display: flex;
   flex-direction: column;
   padding: 24px;
@@ -838,6 +837,25 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+  max-height: 280px;
+  padding-right: 4px;
+}
+
+/* 自定义滚动条 - 最近创作 */
+.recent-list::-webkit-scrollbar {
+  width: 4px;
+}
+.recent-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.recent-list::-webkit-scrollbar-thumb {
+  background: #E0E0E0;
+  border-radius: 4px;
+}
+.recent-list::-webkit-scrollbar-thumb:hover {
+  background: #BDBDBD;
 }
 
 .recent-item {
@@ -909,7 +927,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 220px;
+  flex: 1;
+  max-height: 280px;
   overflow-y: auto;
   padding-right: 4px;
 }
