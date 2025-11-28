@@ -56,6 +56,14 @@
           <div class="user-menu-divider"></div>
 
           <!-- 菜单项 -->
+          <div class="user-menu-item user-menu-item-role">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span class="user-menu-item-value">{{ roleDisplayName }}</span>
+          </div>
+
           <button type="button" class="user-menu-item user-menu-item-logout" @click="handleLogout">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -99,6 +107,7 @@ const initializing = computed(() => authStore.initializing)
 const user = computed(() => authStore.user)
 const displayName = computed(() => authStore.displayName)
 const avatarInitial = computed(() => authStore.avatarInitial)
+const roleDisplayName = computed(() => authStore.roleDisplayName)
 
 // ============================================================================
 // Methods
@@ -339,6 +348,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   cursor: pointer;
   font-size: 14px;
@@ -348,6 +358,17 @@ onBeforeUnmount(() => {
 
 .user-menu-item:hover {
   background: var(--overlay-light);
+}
+
+/* 身份显示项（不可点击） */
+.user-menu-item-role {
+  cursor: default;
+  pointer-events: none;
+}
+
+.user-menu-item-value {
+  font-weight: 500;
+  color: var(--primary);
 }
 
 .user-menu-item-logout {

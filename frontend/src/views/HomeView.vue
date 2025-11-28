@@ -991,7 +991,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .trend-item:hover {
-  background: #F5F5F5;
+  background: var(--overlay-medium);
 }
 
 .trend-rank {
@@ -1316,7 +1316,7 @@ onUnmounted(() => {
   }
 
   .trend-item:active {
-    background: #F5F5F5;
+    background: var(--overlay-medium);
   }
 
   .trend-rank {

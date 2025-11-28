@@ -79,6 +79,26 @@ export const useAuthStore = defineStore('auth', {
     isAdmin(): boolean {
       return this.user?.role === 'admin'
     },
+
+    /**
+     * 获取用户角色显示名称
+     */
+    roleDisplayName(): string {
+      const role = this.user?.role
+      if (!role) return '普通会员'
+
+      switch (role) {
+        case 'admin':
+          return '管理员'
+        case 'pro':
+        case 'premium':
+          return '专业会员'
+        case 'user':
+        case 'member':
+        default:
+          return '普通会员'
+      }
+    },
   },
 
   actions: {
