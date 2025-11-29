@@ -230,11 +230,13 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGeneratorStore } from '../stores/generator'
 import { generateOutline, getHistoryList, getHistory, getRednoteHotspot, type RednoteHotspotItem } from '../api'
+import { useDraftRecovery } from '../composables/useDraftRecovery'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const store = useGeneratorStore()
+const { savingDraft, resumePendingDraft, saveDraft } = useDraftRecovery()
 
 const topic = ref('')
 const loading = ref(false)
@@ -531,10 +533,17 @@ const handleGenerate = async () => {
         store.userImages = []
       }
 
+      // 后台自动保存草稿（不阻塞跳转）
+      saveDraft(store.topic, { raw: store.outline.raw, pages: store.outline.pages }, imageFiles)
+        .catch((err) => {
+          error.value = '草稿已生成但自动保存失败，将在网络恢复后自动重试'
+        })
+
       // 清理预览 URL
       uploadedImages.value.forEach(img => URL.revokeObjectURL(img.preview))
       uploadedImages.value = []
 
+      // 立即跳转，不等待保存完成
       router.push('/outline')
     } else {
       error.value = result.error || '生成大纲失败'
@@ -556,6 +565,9 @@ onMounted(() => {
   loadRecent()
   loadShowcaseImages()
   loadTrending()
+
+  // 尝试恢复未保存的草稿
+  resumePendingDraft()
 
   // 监听窗口大小变化,重新计算高度
   window.addEventListener('resize', calcSectionHeight)

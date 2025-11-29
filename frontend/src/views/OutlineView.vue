@@ -68,12 +68,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeneratorStore } from '../stores/generator'
+import { useDraftRecovery } from '../composables/useDraftRecovery'
 
 const router = useRouter()
 const store = useGeneratorStore()
+const { resumePendingDraft } = useDraftRecovery()
 
 const dragOverIndex = ref<number | null>(null)
 const draggedIndex = ref<number | null>(null)
@@ -130,6 +132,11 @@ const goBack = () => {
 const startGeneration = () => {
   router.push('/generate')
 }
+
+// 页面加载时尝试恢复未保存的草稿
+onMounted(() => {
+  resumePendingDraft()
+})
 </script>
 
 <style scoped>

@@ -927,13 +927,15 @@ export async function createHistory(
   topic: string,
   outline: { raw: string; pages: Page[] },
   taskId?: string,
-  userImages?: string[]
+  userImages?: string[],
+  recordId?: string
 ): Promise<{ success: boolean; record_id?: string; error?: string }> {
   const response = await apiClient.post('/history', {
     topic,
     outline,
     task_id: taskId,
     user_images: userImages,
+    record_id: recordId,
   })
   return response.data
 }

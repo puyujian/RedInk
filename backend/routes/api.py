@@ -824,6 +824,7 @@ def create_history():
         outline = data.get('outline')
         task_id = data.get('task_id')
         user_images = data.get('user_images')  # 新增：用户参考图片
+        record_id = data.get('record_id')      # 可选：客户端生成的幂等 ID
 
         if not topic or not outline:
             return jsonify({
@@ -832,8 +833,8 @@ def create_history():
             }), 400
 
         history_service = get_history_service()
-        record_id = history_service.create_record(
-            user.id, topic, outline, task_id, user_images
+        record_id = history_service.create_or_update_draft(
+            user.id, topic, outline, task_id, user_images, record_id=record_id
         )
 
         return jsonify({

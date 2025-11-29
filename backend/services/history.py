@@ -28,7 +28,8 @@ class HistoryService:
         topic: str,
         outline: Dict,
         task_id: Optional[str] = None,
-        user_images: Optional[List[str]] = None
+        user_images: Optional[List[str]] = None,
+        record_id: Optional[str] = None
     ) -> str:
         """创建历史记录
 
@@ -38,13 +39,15 @@ class HistoryService:
             outline: 大纲数据（dict）
             task_id: 图片生成任务 ID（可选）
             user_images: 用户上传的参考图片（base64 编码列表，可选）
+            record_id: 指定的记录 UUID（可选，用于幂等创建）
 
         Returns:
             str: 记录 UUID
         """
         with db_session() as db:
+            record_uuid = record_id or str(uuid.uuid4())
             record = HistoryRecord(
-                record_uuid=str(uuid.uuid4()),
+                record_uuid=record_uuid,
                 user_id=user_id,
                 title=topic,
                 outline_json=outline,
@@ -53,7 +56,66 @@ class HistoryService:
                 status='draft',
             )
             db.add(record)
-            db.flush()  # 确保生成 UUID
+            db.flush()  # 确保生成/占用 UUID
+            return record.record_uuid
+
+    def create_or_update_draft(
+        self,
+        user_id: int,
+        topic: str,
+        outline: Dict,
+        task_id: Optional[str] = None,
+        user_images: Optional[List[str]] = None,
+        record_id: Optional[str] = None
+    ) -> str:
+        """幂等草稿创建/更新，支持客户端自带 record_id
+
+        如果指定的 record_id 已存在且属于该用户，则更新草稿内容；
+        否则创建新的草稿记录。这样可以支持前端重试而不会重复创建记录。
+
+        Args:
+            user_id: 用户 ID
+            topic: 主题标题
+            outline: 大纲数据（dict）
+            task_id: 图片生成任务 ID（可选）
+            user_images: 用户上传的参考图片（base64 编码列表，可选）
+            record_id: 指定的记录 UUID（可选）
+
+        Returns:
+            str: 记录 UUID
+        """
+        with db_session() as db:
+            # 如果提供了 record_id，先尝试查找现有记录
+            if record_id:
+                existing = db.query(HistoryRecord).filter(
+                    HistoryRecord.record_uuid == record_id,
+                    HistoryRecord.user_id == user_id
+                ).first()
+
+                if existing:
+                    # 更新现有草稿
+                    existing.title = topic
+                    existing.outline_json = outline
+                    existing.image_task_id = task_id
+                    existing.user_images_json = {'images': user_images} if user_images else None
+                    existing.status = 'draft'
+                    existing.updated_at = datetime.now(timezone.utc)
+                    db.flush()  # 确保更新被提交
+                    return existing.record_uuid
+
+            # 不存在则按给定 record_id（或新 UUID）创建
+            new_uuid = record_id or str(uuid.uuid4())
+            record = HistoryRecord(
+                record_uuid=new_uuid,
+                user_id=user_id,
+                title=topic,
+                outline_json=outline,
+                image_task_id=task_id,
+                user_images_json={'images': user_images} if user_images else None,
+                status='draft',
+            )
+            db.add(record)
+            db.flush()
             return record.record_uuid
 
     def get_record(self, user_id: int, record_id: str) -> Optional[Dict]:
