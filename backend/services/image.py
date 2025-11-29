@@ -908,11 +908,35 @@ class ImageService:
             }
         }
 
+    def _decode_user_images(self, images_base64: Optional[List[str]]) -> List[bytes]:
+        """解码用户上传的参考图并压缩
+
+        Args:
+            images_base64: base64编码的图片列表
+
+        Returns:
+            压缩后的图片字节列表
+        """
+        result: List[bytes] = []
+        for idx, img_b64 in enumerate(images_base64 or []):
+            if not img_b64:
+                continue
+            try:
+                # 移除 data:image/xxx;base64, 前缀
+                if "," in img_b64:
+                    img_b64 = img_b64.split(",", 1)[1]
+                decoded = base64.b64decode(img_b64)
+                result.append(compress_image(decoded, max_size_kb=200))
+            except Exception as e:
+                logger.warning(f"[重新生成] 用户参考图解码失败 index={idx}: {e}")
+        return result
+
     def regenerate_image(
         self,
         task_id: str,
         page: Dict,
-        use_reference: bool = True
+        use_reference: bool = True,
+        user_images: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         重新生成图片（用户手动触发，即使成功的也可以重新生成）
@@ -921,11 +945,109 @@ class ImageService:
             task_id: 任务ID
             page: 页面数据
             use_reference: 是否使用封面作为参考
+            user_images: 用户上传的参考图片（base64 列表，可选）
 
         Returns:
-            生成结果
+            生成结果，包含候选图片列表
         """
-        return self.retry_single_image(task_id, page, use_reference)
+        # 从持久化存储加载任务状态
+        state = ImageTaskStateStore.load_state(task_id)
+
+        # 校验任务状态是否存在
+        if not state:
+            logger.error(f"[重新生成] 任务状态不存在或已过期: task_id={task_id}")
+            return {
+                "success": False,
+                "index": page.get("index", -1),
+                "error": "任务状态不存在或已过期，请重新生成整个任务",
+                "retryable": False
+            }
+
+        state_generated = state.get("generated") or {}
+        state_candidates = state.get("candidates") or {}
+        full_outline = state.get("full_outline", "")
+        user_topic = state.get("user_topic", "")
+
+        # 获取参考图（优先使用持久化存储）
+        reference_image = None
+        if use_reference:
+            reference_image = ImageTaskStateStore.get_cover_image(task_id)
+            if reference_image is None and task_id in self._task_states:
+                reference_image = self._task_states[task_id].get("cover_image")
+
+        # 准备用户参考图
+        user_images_bytes: Optional[List[bytes]] = None
+        if task_id in self._task_states:
+            user_images_bytes = self._task_states[task_id].get("user_images")
+        if not user_images_bytes:
+            # 优先使用传入的user_images，否则从状态中获取
+            base64_list = user_images if user_images is not None else state.get("user_images")
+            if base64_list:
+                user_images_bytes = self._decode_user_images(base64_list)
+
+        # 生成新图片
+        index, success, filename, error, candidates, retryable = self._generate_single_image(
+            page,
+            task_id,
+            reference_image,
+            0,
+            full_outline,
+            user_images_bytes or None,
+            user_topic,
+        )
+
+        if success:
+            key = str(index)
+
+            # 合并候选图片列表：原图 + 已有候选 + 新生成的图
+            merged_candidates: List[str] = []
+
+            # 1. 添加原图（如果存在）
+            previous_main = state_generated.get(key)
+            if previous_main:
+                merged_candidates.append(previous_main)
+
+            # 2. 添加已有候选图
+            merged_candidates.extend(state_candidates.get(key) or [])
+
+            # 3. 添加新生成的图
+            if candidates:
+                merged_candidates.extend(candidates)
+            elif filename:
+                merged_candidates.append(filename)
+
+            # 去重保持顺序
+            seen = set()
+            unique_candidates: List[str] = []
+            for f in merged_candidates:
+                if not f or f in seen:
+                    continue
+                seen.add(f)
+                unique_candidates.append(f)
+
+            # 更新持久化状态
+            if state:
+                ImageTaskStateStore.add_generated(task_id, index, filename, unique_candidates)
+
+            # 更新内存状态
+            if task_id in self._task_states:
+                self._task_states[task_id].setdefault("generated", {})[index] = filename
+                self._task_states[task_id].setdefault("candidates", {})[index] = unique_candidates
+
+            return {
+                "success": True,
+                "index": index,
+                "image_url": f"/api/images/{filename}",
+                "candidates": [f"/api/images/{f}" for f in unique_candidates],
+                "candidate_files": unique_candidates,
+            }
+        else:
+            return {
+                "success": False,
+                "index": index,
+                "error": error,
+                "retryable": retryable
+            }
 
     def get_image_path(self, filename: str) -> str:
         """

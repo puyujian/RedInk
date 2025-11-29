@@ -744,6 +744,7 @@ def regenerate_image():
         task_id = data.get('task_id')
         page = data.get('page')
         use_reference = data.get('use_reference', True)
+        user_images = data.get('user_images')
 
         if not task_id or not page:
             return jsonify({
@@ -753,7 +754,12 @@ def regenerate_image():
 
         # 使用与原任务相同的服务商配置
         image_service = _get_image_service_for_task(task_id)
-        result = image_service.regenerate_image(task_id, page, use_reference)
+        result = image_service.regenerate_image(
+            task_id,
+            page,
+            use_reference,
+            user_images=user_images
+        )
 
         return jsonify(result), 200 if result["success"] else 500
 

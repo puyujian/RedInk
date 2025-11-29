@@ -593,6 +593,13 @@ async function regenerateHistoryImage(index: number) {
   const page = viewingRecord.value.outline.pages[index]
   if (!page) return
 
+  // 保存原图文件名
+  const originalFilename = viewingRecord.value.images.generated?.[index]
+
+  // 确保 candidates_map 存在
+  const candidatesMap = viewingRecord.value.images.candidates_map || {}
+  viewingRecord.value.images.candidates_map = candidatesMap
+
   // 添加到正在重绘的集合
   regeneratingImages.value.add(index)
 
@@ -600,18 +607,31 @@ async function regenerateHistoryImage(index: number) {
     const result = await apiRegenerateImage(
       viewingRecord.value.images.task_id,
       page,
-      true
+      true,
+      viewingRecord.value.user_images || []
     )
 
     if (result.success && result.image_url) {
-      // 更新当前查看记录中的图片
-      viewingRecord.value.images.generated[index] = result.image_url.split('/').pop()
+      const newFilename = result.image_url.split('/').pop()
+      const key = String(index)
+
+      // 直接使用后端返回的候选图列表（后端已经完成了合并和去重）
+      if (newFilename) {
+        viewingRecord.value.images.generated[index] = newFilename
+      }
+
+      // 使用后端返回的候选图列表
+      if (result.candidate_files && result.candidate_files.length > 0) {
+        candidatesMap[key] = result.candidate_files
+        viewingRecord.value.images.candidates_map = { ...candidatesMap }
+      }
 
       // 更新历史记录
       await updateHistory(viewingRecord.value.id, {
         images: {
           task_id: viewingRecord.value.images.task_id,
-          generated: viewingRecord.value.images.generated
+          generated: viewingRecord.value.images.generated,
+          candidates_map: viewingRecord.value.images.candidates_map
         }
       })
 

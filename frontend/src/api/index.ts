@@ -792,12 +792,21 @@ export async function retrySingleImage(
 export async function regenerateImage(
   taskId: string,
   page: Page,
-  useReference: boolean = true
-): Promise<{ success: boolean; index: number; image_url?: string; error?: string }> {
+  useReference: boolean = true,
+  userImages?: string[]
+): Promise<{
+  success: boolean
+  index: number
+  image_url?: string
+  candidates?: string[]
+  candidate_files?: string[]
+  error?: string
+}> {
   const response = await apiClient.post('/regenerate', {
     task_id: taskId,
     page,
     use_reference: useReference,
+    user_images: userImages,
   })
   return response.data
 }
